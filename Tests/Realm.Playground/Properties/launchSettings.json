@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Realm.Playground": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}

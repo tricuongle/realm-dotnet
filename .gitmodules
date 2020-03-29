@@ -1,3 +1,6 @@
 [submodule "wrappers/src/object-store"]
 	path = wrappers/src/object-store
 	url = https://github.com/realm/realm-object-store.git
+[submodule "wrappers/src/realm-core"]
+	path = wrappers/src/realm-core
+	url = https://github.com/realm/realm-core.git
