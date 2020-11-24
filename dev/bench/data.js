@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1606217348603,
+  "lastUpdate": 1606219091570,
   "repoUrl": "https://github.com/realm/realm-dotnet",
   "entries": {
     "Benchmark": [
@@ -240,6 +240,66 @@ window.BENCHMARK_DATA = {
             "value": 752978.80859375,
             "unit": "ns",
             "range": "± 5175.066088747412"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "4850119+papafe@users.noreply.github.com",
+            "name": "Ferdinando Papale",
+            "username": "papafe"
+          },
+          "committer": {
+            "email": "4850119+papafe@users.noreply.github.com",
+            "name": "Ferdinando Papale",
+            "username": "papafe"
+          },
+          "distinct": true,
+          "id": "b24c3df46d5558bf3a94df3d0a57b26605ee369c",
+          "message": "Merge branch 'fp/benchmark-github-action-2119' of github.com:realm/realm-dotnet into fp/benchmark-github-action-2119",
+          "timestamp": "2020-11-24T12:41:06+01:00",
+          "tree_id": "02eac6584ae663f5cf1102f74a7a9a64e035adc0",
+          "url": "https://github.com/realm/realm-dotnet/commit/b24c3df46d5558bf3a94df3d0a57b26605ee369c"
+        },
+        "date": 1606219082229,
+        "tool": "benchmarkdotnet",
+        "benches": [
+          {
+            "name": "PerformanceTests.QueryTests.Count(ObjectCount: 10)",
+            "value": 271865.625,
+            "unit": "ns",
+            "range": "± 1397.137647510275"
+          },
+          {
+            "name": "PerformanceTests.QueryTests.Count(ObjectCount: 100)",
+            "value": 271493.1966145833,
+            "unit": "ns",
+            "range": "± 1489.2960943252585"
+          },
+          {
+            "name": "PerformanceTests.QueryTests.Count(ObjectCount: 1000)",
+            "value": 281004.2317708333,
+            "unit": "ns",
+            "range": "± 3830.3658423026986"
+          },
+          {
+            "name": "PerformanceTests.QueryTests.Enumerate(ObjectCount: 10)",
+            "value": 46659.94669596354,
+            "unit": "ns",
+            "range": "± 704.5703335195731"
+          },
+          {
+            "name": "PerformanceTests.QueryTests.Enumerate(ObjectCount: 100)",
+            "value": 106664.6240234375,
+            "unit": "ns",
+            "range": "± 1355.3479290853131"
+          },
+          {
+            "name": "PerformanceTests.QueryTests.Enumerate(ObjectCount: 1000)",
+            "value": 761040.6901041666,
+            "unit": "ns",
+            "range": "± 8323.06897924383"
           }
         ]
       }
