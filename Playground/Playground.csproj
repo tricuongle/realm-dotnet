@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net461;netcoreapp3.1</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Realm\Realm\Realm.csproj" PrivateAssets="None" />
+    <PackageReference Include="Nito.AsyncEx" Version="5.1.0" />
+  </ItemGroup>
+  <Import Project="..\Realm\Realm.Fody\InSolutionWeaver.props" />
+
+  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <None Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\x86\ucrt\ucrtbased.dll" Condition="'$(Configuration)' == 'Debug' AND '$(OS)' == 'Windows_NT'">
+      <Link>lib\win32\x86\ucrtbased.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\x64\ucrt\ucrtbased.dll" Condition="'$(Configuration)' == 'Debug' AND '$(OS)' == 'Windows_NT'">
+      <Link>lib\win32\x64\ucrtbased.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Windows\$(Configuration)-Win32\realm-wrappers.dll" Condition="Exists('..\wrappers\build\Windows\$(Configuration)-Win32\realm-wrappers.dll')">
+      <Link>lib\win32\x86\realm-wrappers.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Windows\$(Configuration)-x64\realm-wrappers.dll" Condition="Exists('..\wrappers\build\Windows\$(Configuration)-x64\realm-wrappers.dll')">
+      <Link>lib\win32\x64\realm-wrappers.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Darwin\$(Configuration)\librealm-wrappers.dylib" Condition="Exists('..\wrappers\build\Darwin\$(Configuration)\librealm-wrappers.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Linux\$(Configuration)\librealm-wrappers.so" Condition="Exists('..\wrappers\build\Linux\$(Configuration)\librealm-wrappers.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETCoreApp'">
+    <None Include="..\wrappers\build\Darwin\$(Configuration)\librealm-wrappers.dylib" Condition="Exists('..\wrappers\build\Darwin\$(Configuration)\librealm-wrappers.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Linux\$(Configuration)\librealm-wrappers.so" Condition="Exists('..\wrappers\build\Linux\$(Configuration)\librealm-wrappers.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\wrappers\build\Windows\$(Configuration)-x64\realm-wrappers.dll" Condition="Exists('..\wrappers\build\Windows\$(Configuration)-x64\realm-wrappers.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(MSBuildProgramFiles32)\Windows Kits\10\bin\x64\ucrt\ucrtbased.dll" Condition="'$(Configuration)' == 'Debug' AND '$(OS)' == 'Windows_NT'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
