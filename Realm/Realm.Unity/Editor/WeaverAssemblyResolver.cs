@@ -27,6 +27,33 @@ using UnityEngine;
 
 namespace RealmWeaver
 {
+
+    //public class BuildAssemblyResolver : BaseAssemblyResolver
+    //{
+    //    private BuildAssemblyResolver(string[] paths)
+    //    {
+    //        foreach (var path in paths)
+    //        {
+    //            AddSearchDirectory(Path.GetDirectoryName(path));
+    //        }
+    //    }
+
+    //    public static (ModuleDefinition, IDisposable) Resolve(string assemblyPath, string[] paths)
+    //    {
+    //        var assemblyStream = new FileStream(assemblyPath, FileMode.Open, FileAccess.ReadWrite);
+    //        var module = ModuleDefinition.ReadModule(assemblyStream, new ReaderParameters
+    //        {
+    //            ReadingMode = ReadingMode.Immediate,
+    //            ReadWrite = true,
+    //            AssemblyResolver = new BuildAssemblyResolver(paths),
+    //            ReadSymbols = true,
+    //            SymbolReaderProvider = new PdbReaderProvider()
+    //        });
+
+    //        return (module, assemblyStream);
+    //    }
+    //}
+
     public class WeaverAssemblyResolver : BaseAssemblyResolver
     {
         private readonly IDictionary<string, string> _appDomainAssemblyLocations = new Dictionary<string, string>();
@@ -45,24 +72,14 @@ namespace RealmWeaver
             }
         }
 
-        public static (ModuleDefinition, IDisposable) Resolve(string assemblyPath)
+        public static (ModuleDefinition, IDisposable) Resolve(string assemblyPath, string[] systemAssemblies)
         {
-            var assembly = CompilationPipeline.GetAssemblies(AssembliesType.Player)
-                                              .FirstOrDefault(p => p.outputPath == assemblyPath);
-
-            if (assembly == null)
-            {
-                return (null, null);
-            }
-
             var absolutePath = GetAbsolutePath(assemblyPath);
 
             if (!File.Exists(absolutePath))
             {
                 return (null, null);
             }
-
-            var systemAssemblies = CompilationPipeline.GetSystemAssemblyDirectories(assembly.compilerOptions.ApiCompatibilityLevel);
 
             var assemblyStream = new FileStream(assemblyPath, FileMode.Open, FileAccess.ReadWrite);
             var module = ModuleDefinition.ReadModule(assemblyStream, new ReaderParameters

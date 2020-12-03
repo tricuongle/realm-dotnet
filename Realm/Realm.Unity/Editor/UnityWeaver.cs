@@ -17,6 +17,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 using System;
+using System.Linq;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.Versioning;
@@ -25,11 +26,29 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Pdb;
 using UnityEditor;
+using UnityEditor.Build;
+using UnityEditor.Build.Reporting;
 using UnityEditor.Compilation;
 using UnityEngine;
+using UnityEditor.Il2Cpp;
 
 namespace RealmWeaver
 {
+    public class BuildManager : IPostBuildPlayerScriptDLLs
+    {
+        public int callbackOrder => 0;
+        public void OnPostBuildPlayerScriptDLLs(BuildReport report)
+        {
+            var assemblyCSharp = report.files.Single(item => item.path.Contains("Assembly-CSharp.dll"));
+
+            // need to find a way to read this instead of hardcoding it
+            var systemAssemblies = CompilationPipeline.GetSystemAssemblyDirectories(ApiCompatibilityLevel.NET_Standard_2_0);
+
+            UnityWeaver.WeaveAssembly(assemblyCSharp.path, systemAssemblies);
+        }
+    }
+
+
     public class UnityWeaver
     {
         private static WriterParameters WriterParameters => new WriterParameters
@@ -48,6 +67,20 @@ namespace RealmWeaver
 
         private static void CompilationComplete(string assemblyPath, CompilerMessage[] compilerMessages)
         {
+            var assembly = CompilationPipeline.GetAssemblies(AssembliesType.Player)
+                                  .FirstOrDefault(p => p.outputPath == assemblyPath);
+
+            if (assembly == null)
+            {
+                return;
+            }
+
+            var systemAssemblies = CompilationPipeline.GetSystemAssemblyDirectories(assembly.compilerOptions.ApiCompatibilityLevel);
+            WeaveAssembly(assemblyPath, systemAssemblies);
+        }
+
+        public static void WeaveAssembly(string assemblyPath, string[] paths)
+        {
             if (string.IsNullOrEmpty(assemblyPath))
             {
                 return;
@@ -61,7 +94,7 @@ namespace RealmWeaver
                 var timer = new Stopwatch();
                 timer.Start();
 
-                var (moduleDefinition, fileStream) = WeaverAssemblyResolver.Resolve(assemblyPath);
+                var (moduleDefinition, fileStream) = WeaverAssemblyResolver.Resolve(assemblyPath, paths);
                 if (moduleDefinition == null)
                 {
                     return;
