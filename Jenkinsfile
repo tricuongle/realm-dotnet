@@ -31,8 +31,8 @@ stage('Checkout') {
     }
     // TODO: temporary add a beta.X suffix for v10 releases
     // Also update in AppHandle.cs
-    else if (env.CHANGE_BRANCH == 'release/10.0.0-beta.3') {
-      versionSuffix = "beta.3"
+    else if (env.CHANGE_BRANCH == 'release/10.0.0-beta.4') {
+      versionSuffix = "beta.4"
     }
 
     stash includes: '**', excludes: 'wrappers/**', name: 'dotnet-source', useDefaultExcludes: false
@@ -362,7 +362,7 @@ def NetCoreTest(String nodeName, String targetFramework) {
         if (nodeName == 'docker') {
           def test_runner_image = docker.image(DetermineDockerImg(targetFramework))
           test_runner_image.pull()
-          withRealmCloud(version: '2020-12-02', appsToImport: ["dotnet-integration-tests": appLocation]) { networkName ->
+          withRealmCloud(version: '2020-12-04', appsToImport: ["dotnet-integration-tests": appLocation]) { networkName ->
             test_runner_image.inside("--network=${networkName}") {
               def appId = sh script: "cat ${appLocation}/app_id", returnStdout: true
 
