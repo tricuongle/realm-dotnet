@@ -1,0 +1,35 @@
+{
+    "name": "Tests.PlayMode",
+    "rootNamespace": "",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Realm.dll",
+        "MongoDB.Bson.dll",
+        "Remotion.Linq.dll",
+        "System.Buffers.dll",
+        "System.Runtime.CompilerServices.Unsafe.dll",
+        "System.Numerics.Vectors.dll",
+        "System.Memory.dll",
+        "Nito.Disposables.dll",
+        "System.Collections.Immutable.dll",
+        "Nito.AsyncEx.Context.dll",
+        "Nito.AsyncEx.Tasks.dll",
+        "System.Reactive.dll",
+        "System.Threading.Tasks.Extensions.dll",
+        "UnityUtils.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

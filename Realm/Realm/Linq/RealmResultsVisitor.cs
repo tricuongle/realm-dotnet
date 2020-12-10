@@ -24,6 +24,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using MongoDB.Bson;
+using Realms.Helpers;
 using Realms.Schema;
 using LazyMethod = System.Lazy<System.Reflection.MethodInfo>;
 
@@ -462,8 +463,7 @@ namespace Realms
                 var operand = ((UnaryExpression)expr).Operand;
                 if (TryExtractConstantValue(operand, out var innerValue))
                 {
-                    var parameter = Expression.Parameter(operand.Type, "op");
-                    value = Expression.Lambda(expr, parameter).Compile().DynamicInvoke(innerValue);
+                    value = Operator.Convert(innerValue, operand.Type, expr.Type);
                     return true;
                 }
 

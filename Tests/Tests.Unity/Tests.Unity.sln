@@ -1,0 +1,32 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.PlayMode", "Tests.PlayMode.csproj", "{2529C05E-0142-3CDE-4ED2-3CDEEAA23895}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UnityWeaver", "UnityWeaver.csproj", "{5EEE5674-8C55-39B0-5CA6-244B3B8F9181}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.PlayMode", "Tests.PlayMode.Player.csproj", "{8D1249D2-CA9A-11AF-B46A-70715B44D59A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2529C05E-0142-3CDE-4ED2-3CDEEAA23895}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2529C05E-0142-3CDE-4ED2-3CDEEAA23895}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2529C05E-0142-3CDE-4ED2-3CDEEAA23895}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2529C05E-0142-3CDE-4ED2-3CDEEAA23895}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EEE5674-8C55-39B0-5CA6-244B3B8F9181}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EEE5674-8C55-39B0-5CA6-244B3B8F9181}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EEE5674-8C55-39B0-5CA6-244B3B8F9181}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EEE5674-8C55-39B0-5CA6-244B3B8F9181}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8D1249D2-CA9A-11AF-B46A-70715B44D59A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8D1249D2-CA9A-11AF-B46A-70715B44D59A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8D1249D2-CA9A-11AF-B46A-70715B44D59A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8D1249D2-CA9A-11AF-B46A-70715B44D59A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

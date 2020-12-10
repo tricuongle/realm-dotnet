@@ -198,3 +198,9 @@ Realm/Realm.Unity/Runtime/Dependencies/*.meta
 Realm/Realm.Unity/Runtime/Dependencies.meta
 Tests/PerformanceTests/BenchmarkDotNet.Artifacts/
 Realm/Realm.Unity/**/*.tgz
+Tests/Tests.Unity/Library/PackageCache/
+Tests/Tests.Unity/Library/ShaderCache/
+Tests/Tests.Unity/Library/StateCache/
+Tests/Tests.Unity/Library/
+Tests/Tests.Unity/Temp/
+Tests/Tests.Unity/Builds/

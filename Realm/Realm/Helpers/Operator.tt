@@ -71,6 +71,13 @@ namespace Realms.Helpers
             [(typeof(<#= tuple.Item1 #>), typeof(<#= tuple.Item2 #>))] = new <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter(),
 <#
             }
+
+            foreach (var tuple in GenerateNonNumericTypeMatrix())
+            {
+#>
+            [(typeof(<#= tuple.Item1 #>), typeof(<#= tuple.Item2 #>))] = new <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter(),
+<#
+            }
 #>
         };
 
@@ -125,6 +132,43 @@ namespace Realms.Helpers
             return GenericOperator<TFrom, TResult>.Convert(value);
         }
 
+        public static object Convert(object value, Type fromType, Type toType)
+        {
+            if (toType == typeof(RealmValue))
+            {
+                // This is special cased due to a bug in the Xamarin.iOS interpreter.
+                if (value is null)
+                {
+                    return RealmValue.Null();
+                }
+
+                /* This is another special case where `value` is inheritable from RealmObjectBase. There's
+                 * no direct conversion from T to RealmValue, but there's conversion if we go through RealmObjectBase.
+                 */
+                if (value is RealmObjectBase robj)
+                {
+                    return new RealmValue(robj);
+                }
+            }
+
+            if (value is null || fromType == toType)
+            {
+                return value;
+            }
+
+            if (_valueConverters.TryGetValue((fromType, toType), out var converter))
+            {
+                return converter.Convert(value);
+            }
+
+            if (toType.IsAssignableFrom(fromType) || fromType == typeof(object))
+            {
+                return System.Convert.ChangeType(value, toType);
+            }
+
+            throw new NotSupportedException($"No conversion exists from {fromType.FullName} to {toType.FullName}");
+        }
+
         /// <summary>
         /// An operator that exposes a method to convert from <typeparamref name="TSource"/>
         /// to <typeparamref name="TTarget"/>. Upon constructing the closed generic type, the static
@@ -169,6 +213,7 @@ namespace Realms.Helpers
         /// </summary>
         private interface IConverter
         {
+            object Convert(object value);
         }
 
         /// <summary>
@@ -184,6 +229,13 @@ namespace Realms.Helpers
             TTarget Convert(TSource source);
         }
 
+        public abstract class SpecializedConverterBase<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        {
+            public abstract TTarget Convert(TSource source);
+
+            public object Convert(object value) => Convert((TSource)value);
+        }
+
         /// <summary>
         /// A converter that will throw whenever <see cref="ISpecializedConverter{TSource, TTarget}.Convert(TSource)"/>
         /// is called. This is used to handle cases where there is no conversion from <typeparamref name="TSource"/> to
@@ -191,9 +243,9 @@ namespace Realms.Helpers
         /// </summary>
         /// <typeparam name="TSource">The type from which to convert.</typeparam>
         /// <typeparam name="TTarget">The type to which <typeparamref name="TSource"/> will be converted.</typeparam>
-        private class ThrowingConverter<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        private class ThrowingConverter<TSource, TTarget> : SpecializedConverterBase<TSource, TTarget>
         {
-            public TTarget Convert(TSource source) => throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
+            public override TTarget Convert(TSource source) => throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
         }
 
         /// <summary>
@@ -201,9 +253,9 @@ namespace Realms.Helpers
         /// the target type is, so we need to convert, just in case.
         /// </summary>
         /// <typeparam name="T">The type of both the source and the target.</typeparam>
-        private class UnaryConverter<T> : ISpecializedConverter<T, T>
+        private class UnaryConverter<T> : SpecializedConverterBase<T, T>
         {
-            public T Convert(T source) => source;
+            public override T Convert(T source) => source;
         }
 
         /// <summary>
@@ -213,9 +265,9 @@ namespace Realms.Helpers
         /// </summary>
         /// <typeparam name="TSource">The type from which to convert.</typeparam>
         /// <typeparam name="TTarget">The type to which <typeparamref name="TSource"/> will be converted.</typeparam>
-        private class InheritanceConverter<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        private class InheritanceConverter<TSource, TTarget> : SpecializedConverterBase<TSource, TTarget>
         {
-            public TTarget Convert(TSource source) => source is TTarget obj ? obj : throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
+            public override TTarget Convert(TSource source) => source is TTarget obj ? obj : throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
         }
 
         #region ToRealmValue Converters
@@ -224,9 +276,9 @@ namespace Realms.Helpers
             {
 #>
 
-        public class <#= ToFriendlyMethodName(type) #>RealmValueConverter : ISpecializedConverter<<#= type #>, RealmValue>
+        public class <#= ToFriendlyMethodName(type) #>RealmValueConverter : SpecializedConverterBase<<#= type #>, RealmValue>
         {
-            public RealmValue Convert(<#= type #> value) => value;
+            public override RealmValue Convert(<#= type #> value) => value;
         }
 <#
             }
@@ -239,9 +291,9 @@ namespace Realms.Helpers
             {
 #>
 
-        public class RealmValue<#= ToFriendlyMethodName(type) #>Converter : ISpecializedConverter<RealmValue, <#= type #>>
+        public class RealmValue<#= ToFriendlyMethodName(type) #>Converter : SpecializedConverterBase<RealmValue, <#= type #>>
         {
-            public <#= type #> Convert(RealmValue value) => (<#= type #>)value;
+            public override <#= type #> Convert(RealmValue value) => (<#= type #>)value;
         }
 <#
             }
@@ -254,9 +306,9 @@ namespace Realms.Helpers
             {
 #>
 
-        public class <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter : ISpecializedConverter<<#= tuple.Item1 #>, <#= tuple.Item2#>>
+        public class <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter : SpecializedConverterBase<<#= tuple.Item1 #>, <#= tuple.Item2#>>
         {
-            public <#= tuple.Item2 #> Convert(<#= tuple.Item1 #> value) => <#= tuple.Item3 #>value;
+            public override <#= tuple.Item2 #> Convert(<#= tuple.Item1 #> value) => <#= tuple.Item3 #>value;
         }
 <#
             }
@@ -270,15 +322,32 @@ namespace Realms.Helpers
             {
 #>
 
-        public class <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter : ISpecializedConverter<<#= tuple.Item1 #>, <#= tuple.Item2#>>
+        public class <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter : SpecializedConverterBase<<#= tuple.Item1 #>, <#= tuple.Item2#>>
         {
-            public <#= tuple.Item2 #> Convert(<#= tuple.Item1 #> value) => <#= tuple.Item3 #>value;
+            public override <#= tuple.Item2 #> Convert(<#= tuple.Item1 #> value) => <#= tuple.Item3 #>value;
         }
 <#
             }
 #>
 
         #endregion Floating Point Converters
+
+        #region Nullable Converters
+
+        <#
+            foreach (var tuple in GenerateNonNumericTypeMatrix())
+            {
+#>
+
+        public class <#= ToFriendlyMethodName(tuple.Item1) #><#= ToFriendlyMethodName(tuple.Item2) #>Converter : SpecializedConverterBase<<#= tuple.Item1 #>, <#= tuple.Item2#>>
+        {
+            public override <#= tuple.Item2 #> Convert(<#= tuple.Item1 #> value) => value;
+        }
+<#
+            }
+#>
+
+        #endregion
     }
 }
 <#+
@@ -343,6 +412,14 @@ namespace Realms.Helpers
         new FloatingPointTypeInfo("Decimal128", 16, true),
     };
 
+    private static readonly string[] _nonNumericStructTypes =
+    {
+        "bool",
+        "DateTimeOffset",
+        "ObjectId",
+        "Guid",
+    };
+
     private IEnumerable<Tuple<string, string, string>> GenerateIntegralTypeMatrix()
     {
         foreach (var nullable in new[] { true, false })
@@ -357,7 +434,7 @@ namespace Realms.Helpers
                     }
 
                     var conversion = "";
-                    if (toType.Name == "char" && fromType.Size < 4)
+                    if (toType.Name == "char" && fromType.Size < 4 && fromType.Name != "char")
                     {
                         conversion = "(" + toType.BackingType + ")";
 
@@ -366,7 +443,7 @@ namespace Realms.Helpers
                             conversion += "(" + fromType.BackingType + ")";
                         }
                     }
-                    else if (fromType.Name == "char" && toType.Size < 4)
+                    else if (fromType.Name == "char" && toType.Size < 4 && toType.Name != "char")
                     {
                         conversion = "(" + toType.BackingType + ")";
                     }
@@ -419,6 +496,14 @@ namespace Realms.Helpers
                     yield return Tuple.Create(fromType.Name, toType.Name + (nullable ? "?" : ""), conversion);
                 }
             }
+        }
+    }
+
+    private IEnumerable<Tuple<string, string>> GenerateNonNumericTypeMatrix()
+    {
+        foreach (var type in _nonNumericStructTypes)
+        {
+            yield return Tuple.Create(type, type + "?");
         }
     }
 

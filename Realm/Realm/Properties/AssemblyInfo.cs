@@ -21,3 +21,4 @@ using System.Runtime.CompilerServices;
 [assembly: Realms.Explicit]
 [assembly: InternalsVisibleTo("Realm.Tests")]
 [assembly: InternalsVisibleTo("PerformanceTests")]
+[assembly: InternalsVisibleTo("Tests.PlayMode")]

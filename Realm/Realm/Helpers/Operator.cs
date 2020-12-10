@@ -359,6 +359,10 @@ namespace Realms.Helpers
             [(typeof(Decimal128), typeof(float))] = new Decimal128FloatConverter(),
             [(typeof(Decimal128), typeof(double))] = new Decimal128DoubleConverter(),
             [(typeof(Decimal128), typeof(decimal))] = new Decimal128DecimalConverter(),
+            [(typeof(bool), typeof(bool?))] = new BoolNullableBoolConverter(),
+            [(typeof(DateTimeOffset), typeof(DateTimeOffset?))] = new DateTimeOffsetNullableDateTimeOffsetConverter(),
+            [(typeof(ObjectId), typeof(ObjectId?))] = new ObjectIdNullableObjectIdConverter(),
+            [(typeof(Guid), typeof(Guid?))] = new GuidNullableGuidConverter(),
         };
 
         /// <summary>
@@ -412,6 +416,48 @@ namespace Realms.Helpers
             return GenericOperator<TFrom, TResult>.Convert(value);
         }
 
+        public static object Convert(object value, Type fromType, Type toType)
+        {
+            if (toType == typeof(RealmValue))
+            {
+                // This is special cased due to a bug in the Xamarin.iOS interpreter.
+                if (value is null)
+                {
+                    return RealmValue.Null();
+                }
+
+                /* This is another special case where `value` is inheritable from RealmObjectBase. There's
+                 * no direct conversion from T to RealmValue, but there's conversion if we go through RealmObjectBase.
+                 */
+                if (value is RealmObjectBase robj)
+                {
+                    return new RealmValue(robj);
+                }
+            }
+
+            if (value is null || fromType == toType)
+            {
+                return value;
+            }
+
+            if (_valueConverters.TryGetValue((fromType, toType), out var converter))
+            {
+                return converter.Convert(value);
+            }
+
+            if (toType.IsAssignableFrom(fromType) || fromType == typeof(object))
+            {
+                return System.Convert.ChangeType(value, toType);
+            }
+
+            if (fromType.IsGenericType && fromType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                return Convert(value, fromType.GetGenericArguments()[0], toType);
+            }
+
+            throw new NotSupportedException($"No conversion exists from {fromType.FullName} to {toType.FullName}");
+        }
+
         /// <summary>
         /// An operator that exposes a method to convert from <typeparamref name="TSource"/>
         /// to <typeparamref name="TTarget"/>. Upon constructing the closed generic type, the static
@@ -456,6 +502,7 @@ namespace Realms.Helpers
         /// </summary>
         private interface IConverter
         {
+            object Convert(object value);
         }
 
         /// <summary>
@@ -471,6 +518,13 @@ namespace Realms.Helpers
             TTarget Convert(TSource source);
         }
 
+        public abstract class SpecializedConverterBase<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        {
+            public abstract TTarget Convert(TSource source);
+
+            public object Convert(object value) => Convert((TSource)value);
+        }
+
         /// <summary>
         /// A converter that will throw whenever <see cref="ISpecializedConverter{TSource, TTarget}.Convert(TSource)"/>
         /// is called. This is used to handle cases where there is no conversion from <typeparamref name="TSource"/> to
@@ -478,9 +532,9 @@ namespace Realms.Helpers
         /// </summary>
         /// <typeparam name="TSource">The type from which to convert.</typeparam>
         /// <typeparam name="TTarget">The type to which <typeparamref name="TSource"/> will be converted.</typeparam>
-        private class ThrowingConverter<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        private class ThrowingConverter<TSource, TTarget> : SpecializedConverterBase<TSource, TTarget>
         {
-            public TTarget Convert(TSource source) => throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
+            public override TTarget Convert(TSource source) => throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
         }
 
         /// <summary>
@@ -488,9 +542,9 @@ namespace Realms.Helpers
         /// the target type is, so we need to convert, just in case.
         /// </summary>
         /// <typeparam name="T">The type of both the source and the target.</typeparam>
-        private class UnaryConverter<T> : ISpecializedConverter<T, T>
+        private class UnaryConverter<T> : SpecializedConverterBase<T, T>
         {
-            public T Convert(T source) => source;
+            public override T Convert(T source) => source;
         }
 
         /// <summary>
@@ -500,1658 +554,1683 @@ namespace Realms.Helpers
         /// </summary>
         /// <typeparam name="TSource">The type from which to convert.</typeparam>
         /// <typeparam name="TTarget">The type to which <typeparamref name="TSource"/> will be converted.</typeparam>
-        private class InheritanceConverter<TSource, TTarget> : ISpecializedConverter<TSource, TTarget>
+        private class InheritanceConverter<TSource, TTarget> : SpecializedConverterBase<TSource, TTarget>
         {
-            public TTarget Convert(TSource source) => source is TTarget obj ? obj : throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
+            public override TTarget Convert(TSource source) => source is TTarget obj ? obj : throw new NotSupportedException($"No conversion exists from {typeof(TSource).FullName} to {typeof(TTarget).FullName}");
         }
 
         #region ToRealmValue Converters
 
-        public class CharRealmValueConverter : ISpecializedConverter<char, RealmValue>
+        public class CharRealmValueConverter : SpecializedConverterBase<char, RealmValue>
         {
-            public RealmValue Convert(char value) => value;
+            public override RealmValue Convert(char value) => value;
         }
 
-        public class ByteRealmValueConverter : ISpecializedConverter<byte, RealmValue>
+        public class ByteRealmValueConverter : SpecializedConverterBase<byte, RealmValue>
         {
-            public RealmValue Convert(byte value) => value;
+            public override RealmValue Convert(byte value) => value;
         }
 
-        public class ShortRealmValueConverter : ISpecializedConverter<short, RealmValue>
+        public class ShortRealmValueConverter : SpecializedConverterBase<short, RealmValue>
         {
-            public RealmValue Convert(short value) => value;
+            public override RealmValue Convert(short value) => value;
         }
 
-        public class IntRealmValueConverter : ISpecializedConverter<int, RealmValue>
+        public class IntRealmValueConverter : SpecializedConverterBase<int, RealmValue>
         {
-            public RealmValue Convert(int value) => value;
+            public override RealmValue Convert(int value) => value;
         }
 
-        public class LongRealmValueConverter : ISpecializedConverter<long, RealmValue>
+        public class LongRealmValueConverter : SpecializedConverterBase<long, RealmValue>
         {
-            public RealmValue Convert(long value) => value;
+            public override RealmValue Convert(long value) => value;
         }
 
-        public class FloatRealmValueConverter : ISpecializedConverter<float, RealmValue>
+        public class FloatRealmValueConverter : SpecializedConverterBase<float, RealmValue>
         {
-            public RealmValue Convert(float value) => value;
+            public override RealmValue Convert(float value) => value;
         }
 
-        public class DoubleRealmValueConverter : ISpecializedConverter<double, RealmValue>
+        public class DoubleRealmValueConverter : SpecializedConverterBase<double, RealmValue>
         {
-            public RealmValue Convert(double value) => value;
+            public override RealmValue Convert(double value) => value;
         }
 
-        public class BoolRealmValueConverter : ISpecializedConverter<bool, RealmValue>
+        public class BoolRealmValueConverter : SpecializedConverterBase<bool, RealmValue>
         {
-            public RealmValue Convert(bool value) => value;
+            public override RealmValue Convert(bool value) => value;
         }
 
-        public class DateTimeOffsetRealmValueConverter : ISpecializedConverter<DateTimeOffset, RealmValue>
+        public class DateTimeOffsetRealmValueConverter : SpecializedConverterBase<DateTimeOffset, RealmValue>
         {
-            public RealmValue Convert(DateTimeOffset value) => value;
+            public override RealmValue Convert(DateTimeOffset value) => value;
         }
 
-        public class DecimalRealmValueConverter : ISpecializedConverter<decimal, RealmValue>
+        public class DecimalRealmValueConverter : SpecializedConverterBase<decimal, RealmValue>
         {
-            public RealmValue Convert(decimal value) => value;
+            public override RealmValue Convert(decimal value) => value;
         }
 
-        public class Decimal128RealmValueConverter : ISpecializedConverter<Decimal128, RealmValue>
+        public class Decimal128RealmValueConverter : SpecializedConverterBase<Decimal128, RealmValue>
         {
-            public RealmValue Convert(Decimal128 value) => value;
+            public override RealmValue Convert(Decimal128 value) => value;
         }
 
-        public class ObjectIdRealmValueConverter : ISpecializedConverter<ObjectId, RealmValue>
+        public class ObjectIdRealmValueConverter : SpecializedConverterBase<ObjectId, RealmValue>
         {
-            public RealmValue Convert(ObjectId value) => value;
+            public override RealmValue Convert(ObjectId value) => value;
         }
 
-        public class GuidRealmValueConverter : ISpecializedConverter<Guid, RealmValue>
+        public class GuidRealmValueConverter : SpecializedConverterBase<Guid, RealmValue>
         {
-            public RealmValue Convert(Guid value) => value;
+            public override RealmValue Convert(Guid value) => value;
         }
 
-        public class NullableCharRealmValueConverter : ISpecializedConverter<char?, RealmValue>
+        public class NullableCharRealmValueConverter : SpecializedConverterBase<char?, RealmValue>
         {
-            public RealmValue Convert(char? value) => value;
+            public override RealmValue Convert(char? value) => value;
         }
 
-        public class NullableByteRealmValueConverter : ISpecializedConverter<byte?, RealmValue>
+        public class NullableByteRealmValueConverter : SpecializedConverterBase<byte?, RealmValue>
         {
-            public RealmValue Convert(byte? value) => value;
+            public override RealmValue Convert(byte? value) => value;
         }
 
-        public class NullableShortRealmValueConverter : ISpecializedConverter<short?, RealmValue>
+        public class NullableShortRealmValueConverter : SpecializedConverterBase<short?, RealmValue>
         {
-            public RealmValue Convert(short? value) => value;
+            public override RealmValue Convert(short? value) => value;
         }
 
-        public class NullableIntRealmValueConverter : ISpecializedConverter<int?, RealmValue>
+        public class NullableIntRealmValueConverter : SpecializedConverterBase<int?, RealmValue>
         {
-            public RealmValue Convert(int? value) => value;
+            public override RealmValue Convert(int? value) => value;
         }
 
-        public class NullableLongRealmValueConverter : ISpecializedConverter<long?, RealmValue>
+        public class NullableLongRealmValueConverter : SpecializedConverterBase<long?, RealmValue>
         {
-            public RealmValue Convert(long? value) => value;
+            public override RealmValue Convert(long? value) => value;
         }
 
-        public class NullableFloatRealmValueConverter : ISpecializedConverter<float?, RealmValue>
+        public class NullableFloatRealmValueConverter : SpecializedConverterBase<float?, RealmValue>
         {
-            public RealmValue Convert(float? value) => value;
+            public override RealmValue Convert(float? value) => value;
         }
 
-        public class NullableDoubleRealmValueConverter : ISpecializedConverter<double?, RealmValue>
+        public class NullableDoubleRealmValueConverter : SpecializedConverterBase<double?, RealmValue>
         {
-            public RealmValue Convert(double? value) => value;
+            public override RealmValue Convert(double? value) => value;
         }
 
-        public class NullableBoolRealmValueConverter : ISpecializedConverter<bool?, RealmValue>
+        public class NullableBoolRealmValueConverter : SpecializedConverterBase<bool?, RealmValue>
         {
-            public RealmValue Convert(bool? value) => value;
+            public override RealmValue Convert(bool? value) => value;
         }
 
-        public class NullableDateTimeOffsetRealmValueConverter : ISpecializedConverter<DateTimeOffset?, RealmValue>
+        public class NullableDateTimeOffsetRealmValueConverter : SpecializedConverterBase<DateTimeOffset?, RealmValue>
         {
-            public RealmValue Convert(DateTimeOffset? value) => value;
+            public override RealmValue Convert(DateTimeOffset? value) => value;
         }
 
-        public class NullableDecimalRealmValueConverter : ISpecializedConverter<decimal?, RealmValue>
+        public class NullableDecimalRealmValueConverter : SpecializedConverterBase<decimal?, RealmValue>
         {
-            public RealmValue Convert(decimal? value) => value;
+            public override RealmValue Convert(decimal? value) => value;
         }
 
-        public class NullableDecimal128RealmValueConverter : ISpecializedConverter<Decimal128?, RealmValue>
+        public class NullableDecimal128RealmValueConverter : SpecializedConverterBase<Decimal128?, RealmValue>
         {
-            public RealmValue Convert(Decimal128? value) => value;
+            public override RealmValue Convert(Decimal128? value) => value;
         }
 
-        public class NullableObjectIdRealmValueConverter : ISpecializedConverter<ObjectId?, RealmValue>
+        public class NullableObjectIdRealmValueConverter : SpecializedConverterBase<ObjectId?, RealmValue>
         {
-            public RealmValue Convert(ObjectId? value) => value;
+            public override RealmValue Convert(ObjectId? value) => value;
         }
 
-        public class NullableGuidRealmValueConverter : ISpecializedConverter<Guid?, RealmValue>
+        public class NullableGuidRealmValueConverter : SpecializedConverterBase<Guid?, RealmValue>
         {
-            public RealmValue Convert(Guid? value) => value;
+            public override RealmValue Convert(Guid? value) => value;
         }
 
-        public class RealmIntegerByteRealmValueConverter : ISpecializedConverter<RealmInteger<byte>, RealmValue>
+        public class RealmIntegerByteRealmValueConverter : SpecializedConverterBase<RealmInteger<byte>, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<byte> value) => value;
+            public override RealmValue Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerShortRealmValueConverter : ISpecializedConverter<RealmInteger<short>, RealmValue>
+        public class RealmIntegerShortRealmValueConverter : SpecializedConverterBase<RealmInteger<short>, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<short> value) => value;
+            public override RealmValue Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerIntRealmValueConverter : ISpecializedConverter<RealmInteger<int>, RealmValue>
+        public class RealmIntegerIntRealmValueConverter : SpecializedConverterBase<RealmInteger<int>, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<int> value) => value;
+            public override RealmValue Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerLongRealmValueConverter : ISpecializedConverter<RealmInteger<long>, RealmValue>
+        public class RealmIntegerLongRealmValueConverter : SpecializedConverterBase<RealmInteger<long>, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<long> value) => value;
+            public override RealmValue Convert(RealmInteger<long> value) => value;
         }
 
-        public class NullableRealmIntegerByteRealmValueConverter : ISpecializedConverter<RealmInteger<byte>?, RealmValue>
+        public class NullableRealmIntegerByteRealmValueConverter : SpecializedConverterBase<RealmInteger<byte>?, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<byte>? value) => value;
+            public override RealmValue Convert(RealmInteger<byte>? value) => value;
         }
 
-        public class NullableRealmIntegerShortRealmValueConverter : ISpecializedConverter<RealmInteger<short>?, RealmValue>
+        public class NullableRealmIntegerShortRealmValueConverter : SpecializedConverterBase<RealmInteger<short>?, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<short>? value) => value;
+            public override RealmValue Convert(RealmInteger<short>? value) => value;
         }
 
-        public class NullableRealmIntegerIntRealmValueConverter : ISpecializedConverter<RealmInteger<int>?, RealmValue>
+        public class NullableRealmIntegerIntRealmValueConverter : SpecializedConverterBase<RealmInteger<int>?, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<int>? value) => value;
+            public override RealmValue Convert(RealmInteger<int>? value) => value;
         }
 
-        public class NullableRealmIntegerLongRealmValueConverter : ISpecializedConverter<RealmInteger<long>?, RealmValue>
+        public class NullableRealmIntegerLongRealmValueConverter : SpecializedConverterBase<RealmInteger<long>?, RealmValue>
         {
-            public RealmValue Convert(RealmInteger<long>? value) => value;
+            public override RealmValue Convert(RealmInteger<long>? value) => value;
         }
 
-        public class ByteArrayRealmValueConverter : ISpecializedConverter<byte[], RealmValue>
+        public class ByteArrayRealmValueConverter : SpecializedConverterBase<byte[], RealmValue>
         {
-            public RealmValue Convert(byte[] value) => value;
+            public override RealmValue Convert(byte[] value) => value;
         }
 
-        public class StringRealmValueConverter : ISpecializedConverter<string, RealmValue>
+        public class StringRealmValueConverter : SpecializedConverterBase<string, RealmValue>
         {
-            public RealmValue Convert(string value) => value;
+            public override RealmValue Convert(string value) => value;
         }
 
-        public class RealmObjectBaseRealmValueConverter : ISpecializedConverter<RealmObjectBase, RealmValue>
+        public class RealmObjectBaseRealmValueConverter : SpecializedConverterBase<RealmObjectBase, RealmValue>
         {
-            public RealmValue Convert(RealmObjectBase value) => value;
+            public override RealmValue Convert(RealmObjectBase value) => value;
         }
         #endregion ToRealmValue Converters
 
         #region FromRealmValue Converters
 
-        public class RealmValueCharConverter : ISpecializedConverter<RealmValue, char>
+        public class RealmValueCharConverter : SpecializedConverterBase<RealmValue, char>
         {
-            public char Convert(RealmValue value) => (char)value;
+            public override char Convert(RealmValue value) => (char)value;
         }
 
-        public class RealmValueByteConverter : ISpecializedConverter<RealmValue, byte>
+        public class RealmValueByteConverter : SpecializedConverterBase<RealmValue, byte>
         {
-            public byte Convert(RealmValue value) => (byte)value;
+            public override byte Convert(RealmValue value) => (byte)value;
         }
 
-        public class RealmValueShortConverter : ISpecializedConverter<RealmValue, short>
+        public class RealmValueShortConverter : SpecializedConverterBase<RealmValue, short>
         {
-            public short Convert(RealmValue value) => (short)value;
+            public override short Convert(RealmValue value) => (short)value;
         }
 
-        public class RealmValueIntConverter : ISpecializedConverter<RealmValue, int>
+        public class RealmValueIntConverter : SpecializedConverterBase<RealmValue, int>
         {
-            public int Convert(RealmValue value) => (int)value;
+            public override int Convert(RealmValue value) => (int)value;
         }
 
-        public class RealmValueLongConverter : ISpecializedConverter<RealmValue, long>
+        public class RealmValueLongConverter : SpecializedConverterBase<RealmValue, long>
         {
-            public long Convert(RealmValue value) => (long)value;
+            public override long Convert(RealmValue value) => (long)value;
         }
 
-        public class RealmValueFloatConverter : ISpecializedConverter<RealmValue, float>
+        public class RealmValueFloatConverter : SpecializedConverterBase<RealmValue, float>
         {
-            public float Convert(RealmValue value) => (float)value;
+            public override float Convert(RealmValue value) => (float)value;
         }
 
-        public class RealmValueDoubleConverter : ISpecializedConverter<RealmValue, double>
+        public class RealmValueDoubleConverter : SpecializedConverterBase<RealmValue, double>
         {
-            public double Convert(RealmValue value) => (double)value;
+            public override double Convert(RealmValue value) => (double)value;
         }
 
-        public class RealmValueBoolConverter : ISpecializedConverter<RealmValue, bool>
+        public class RealmValueBoolConverter : SpecializedConverterBase<RealmValue, bool>
         {
-            public bool Convert(RealmValue value) => (bool)value;
+            public override bool Convert(RealmValue value) => (bool)value;
         }
 
-        public class RealmValueDateTimeOffsetConverter : ISpecializedConverter<RealmValue, DateTimeOffset>
+        public class RealmValueDateTimeOffsetConverter : SpecializedConverterBase<RealmValue, DateTimeOffset>
         {
-            public DateTimeOffset Convert(RealmValue value) => (DateTimeOffset)value;
+            public override DateTimeOffset Convert(RealmValue value) => (DateTimeOffset)value;
         }
 
-        public class RealmValueDecimalConverter : ISpecializedConverter<RealmValue, decimal>
+        public class RealmValueDecimalConverter : SpecializedConverterBase<RealmValue, decimal>
         {
-            public decimal Convert(RealmValue value) => (decimal)value;
+            public override decimal Convert(RealmValue value) => (decimal)value;
         }
 
-        public class RealmValueDecimal128Converter : ISpecializedConverter<RealmValue, Decimal128>
+        public class RealmValueDecimal128Converter : SpecializedConverterBase<RealmValue, Decimal128>
         {
-            public Decimal128 Convert(RealmValue value) => (Decimal128)value;
+            public override Decimal128 Convert(RealmValue value) => (Decimal128)value;
         }
 
-        public class RealmValueObjectIdConverter : ISpecializedConverter<RealmValue, ObjectId>
+        public class RealmValueObjectIdConverter : SpecializedConverterBase<RealmValue, ObjectId>
         {
-            public ObjectId Convert(RealmValue value) => (ObjectId)value;
+            public override ObjectId Convert(RealmValue value) => (ObjectId)value;
         }
 
-        public class RealmValueGuidConverter : ISpecializedConverter<RealmValue, Guid>
+        public class RealmValueGuidConverter : SpecializedConverterBase<RealmValue, Guid>
         {
-            public Guid Convert(RealmValue value) => (Guid)value;
+            public override Guid Convert(RealmValue value) => (Guid)value;
         }
 
-        public class RealmValueNullableCharConverter : ISpecializedConverter<RealmValue, char?>
+        public class RealmValueNullableCharConverter : SpecializedConverterBase<RealmValue, char?>
         {
-            public char? Convert(RealmValue value) => (char?)value;
+            public override char? Convert(RealmValue value) => (char?)value;
         }
 
-        public class RealmValueNullableByteConverter : ISpecializedConverter<RealmValue, byte?>
+        public class RealmValueNullableByteConverter : SpecializedConverterBase<RealmValue, byte?>
         {
-            public byte? Convert(RealmValue value) => (byte?)value;
+            public override byte? Convert(RealmValue value) => (byte?)value;
         }
 
-        public class RealmValueNullableShortConverter : ISpecializedConverter<RealmValue, short?>
+        public class RealmValueNullableShortConverter : SpecializedConverterBase<RealmValue, short?>
         {
-            public short? Convert(RealmValue value) => (short?)value;
+            public override short? Convert(RealmValue value) => (short?)value;
         }
 
-        public class RealmValueNullableIntConverter : ISpecializedConverter<RealmValue, int?>
+        public class RealmValueNullableIntConverter : SpecializedConverterBase<RealmValue, int?>
         {
-            public int? Convert(RealmValue value) => (int?)value;
+            public override int? Convert(RealmValue value) => (int?)value;
         }
 
-        public class RealmValueNullableLongConverter : ISpecializedConverter<RealmValue, long?>
+        public class RealmValueNullableLongConverter : SpecializedConverterBase<RealmValue, long?>
         {
-            public long? Convert(RealmValue value) => (long?)value;
+            public override long? Convert(RealmValue value) => (long?)value;
         }
 
-        public class RealmValueNullableFloatConverter : ISpecializedConverter<RealmValue, float?>
+        public class RealmValueNullableFloatConverter : SpecializedConverterBase<RealmValue, float?>
         {
-            public float? Convert(RealmValue value) => (float?)value;
+            public override float? Convert(RealmValue value) => (float?)value;
         }
 
-        public class RealmValueNullableDoubleConverter : ISpecializedConverter<RealmValue, double?>
+        public class RealmValueNullableDoubleConverter : SpecializedConverterBase<RealmValue, double?>
         {
-            public double? Convert(RealmValue value) => (double?)value;
+            public override double? Convert(RealmValue value) => (double?)value;
         }
 
-        public class RealmValueNullableBoolConverter : ISpecializedConverter<RealmValue, bool?>
+        public class RealmValueNullableBoolConverter : SpecializedConverterBase<RealmValue, bool?>
         {
-            public bool? Convert(RealmValue value) => (bool?)value;
+            public override bool? Convert(RealmValue value) => (bool?)value;
         }
 
-        public class RealmValueNullableDateTimeOffsetConverter : ISpecializedConverter<RealmValue, DateTimeOffset?>
+        public class RealmValueNullableDateTimeOffsetConverter : SpecializedConverterBase<RealmValue, DateTimeOffset?>
         {
-            public DateTimeOffset? Convert(RealmValue value) => (DateTimeOffset?)value;
+            public override DateTimeOffset? Convert(RealmValue value) => (DateTimeOffset?)value;
         }
 
-        public class RealmValueNullableDecimalConverter : ISpecializedConverter<RealmValue, decimal?>
+        public class RealmValueNullableDecimalConverter : SpecializedConverterBase<RealmValue, decimal?>
         {
-            public decimal? Convert(RealmValue value) => (decimal?)value;
+            public override decimal? Convert(RealmValue value) => (decimal?)value;
         }
 
-        public class RealmValueNullableDecimal128Converter : ISpecializedConverter<RealmValue, Decimal128?>
+        public class RealmValueNullableDecimal128Converter : SpecializedConverterBase<RealmValue, Decimal128?>
         {
-            public Decimal128? Convert(RealmValue value) => (Decimal128?)value;
+            public override Decimal128? Convert(RealmValue value) => (Decimal128?)value;
         }
 
-        public class RealmValueNullableObjectIdConverter : ISpecializedConverter<RealmValue, ObjectId?>
+        public class RealmValueNullableObjectIdConverter : SpecializedConverterBase<RealmValue, ObjectId?>
         {
-            public ObjectId? Convert(RealmValue value) => (ObjectId?)value;
+            public override ObjectId? Convert(RealmValue value) => (ObjectId?)value;
         }
 
-        public class RealmValueNullableGuidConverter : ISpecializedConverter<RealmValue, Guid?>
+        public class RealmValueNullableGuidConverter : SpecializedConverterBase<RealmValue, Guid?>
         {
-            public Guid? Convert(RealmValue value) => (Guid?)value;
+            public override Guid? Convert(RealmValue value) => (Guid?)value;
         }
 
-        public class RealmValueRealmIntegerByteConverter : ISpecializedConverter<RealmValue, RealmInteger<byte>>
+        public class RealmValueRealmIntegerByteConverter : SpecializedConverterBase<RealmValue, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(RealmValue value) => (RealmInteger<byte>)value;
+            public override RealmInteger<byte> Convert(RealmValue value) => (RealmInteger<byte>)value;
         }
 
-        public class RealmValueRealmIntegerShortConverter : ISpecializedConverter<RealmValue, RealmInteger<short>>
+        public class RealmValueRealmIntegerShortConverter : SpecializedConverterBase<RealmValue, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(RealmValue value) => (RealmInteger<short>)value;
+            public override RealmInteger<short> Convert(RealmValue value) => (RealmInteger<short>)value;
         }
 
-        public class RealmValueRealmIntegerIntConverter : ISpecializedConverter<RealmValue, RealmInteger<int>>
+        public class RealmValueRealmIntegerIntConverter : SpecializedConverterBase<RealmValue, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(RealmValue value) => (RealmInteger<int>)value;
+            public override RealmInteger<int> Convert(RealmValue value) => (RealmInteger<int>)value;
         }
 
-        public class RealmValueRealmIntegerLongConverter : ISpecializedConverter<RealmValue, RealmInteger<long>>
+        public class RealmValueRealmIntegerLongConverter : SpecializedConverterBase<RealmValue, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(RealmValue value) => (RealmInteger<long>)value;
+            public override RealmInteger<long> Convert(RealmValue value) => (RealmInteger<long>)value;
         }
 
-        public class RealmValueNullableRealmIntegerByteConverter : ISpecializedConverter<RealmValue, RealmInteger<byte>?>
+        public class RealmValueNullableRealmIntegerByteConverter : SpecializedConverterBase<RealmValue, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(RealmValue value) => (RealmInteger<byte>?)value;
+            public override RealmInteger<byte>? Convert(RealmValue value) => (RealmInteger<byte>?)value;
         }
 
-        public class RealmValueNullableRealmIntegerShortConverter : ISpecializedConverter<RealmValue, RealmInteger<short>?>
+        public class RealmValueNullableRealmIntegerShortConverter : SpecializedConverterBase<RealmValue, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(RealmValue value) => (RealmInteger<short>?)value;
+            public override RealmInteger<short>? Convert(RealmValue value) => (RealmInteger<short>?)value;
         }
 
-        public class RealmValueNullableRealmIntegerIntConverter : ISpecializedConverter<RealmValue, RealmInteger<int>?>
+        public class RealmValueNullableRealmIntegerIntConverter : SpecializedConverterBase<RealmValue, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(RealmValue value) => (RealmInteger<int>?)value;
+            public override RealmInteger<int>? Convert(RealmValue value) => (RealmInteger<int>?)value;
         }
 
-        public class RealmValueNullableRealmIntegerLongConverter : ISpecializedConverter<RealmValue, RealmInteger<long>?>
+        public class RealmValueNullableRealmIntegerLongConverter : SpecializedConverterBase<RealmValue, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(RealmValue value) => (RealmInteger<long>?)value;
+            public override RealmInteger<long>? Convert(RealmValue value) => (RealmInteger<long>?)value;
         }
 
-        public class RealmValueByteArrayConverter : ISpecializedConverter<RealmValue, byte[]>
+        public class RealmValueByteArrayConverter : SpecializedConverterBase<RealmValue, byte[]>
         {
-            public byte[] Convert(RealmValue value) => (byte[])value;
+            public override byte[] Convert(RealmValue value) => (byte[])value;
         }
 
-        public class RealmValueStringConverter : ISpecializedConverter<RealmValue, string>
+        public class RealmValueStringConverter : SpecializedConverterBase<RealmValue, string>
         {
-            public string Convert(RealmValue value) => (string)value;
+            public override string Convert(RealmValue value) => (string)value;
         }
 
-        public class RealmValueRealmObjectBaseConverter : ISpecializedConverter<RealmValue, RealmObjectBase>
+        public class RealmValueRealmObjectBaseConverter : SpecializedConverterBase<RealmValue, RealmObjectBase>
         {
-            public RealmObjectBase Convert(RealmValue value) => (RealmObjectBase)value;
+            public override RealmObjectBase Convert(RealmValue value) => (RealmObjectBase)value;
         }
         #endregion FromRealmValue Converters
 
         #region Integral Converters
 
-        public class CharNullableCharConverter : ISpecializedConverter<char, char?>
+        public class CharNullableCharConverter : SpecializedConverterBase<char, char?>
         {
-            public char? Convert(char value) => (char)value;
+            public override char? Convert(char value) => value;
         }
 
-        public class CharNullableByteConverter : ISpecializedConverter<char, byte?>
+        public class CharNullableByteConverter : SpecializedConverterBase<char, byte?>
         {
-            public byte? Convert(char value) => (byte)value;
+            public override byte? Convert(char value) => (byte)value;
         }
 
-        public class CharNullableShortConverter : ISpecializedConverter<char, short?>
+        public class CharNullableShortConverter : SpecializedConverterBase<char, short?>
         {
-            public short? Convert(char value) => (short)value;
+            public override short? Convert(char value) => (short)value;
         }
 
-        public class CharNullableIntConverter : ISpecializedConverter<char, int?>
+        public class CharNullableIntConverter : SpecializedConverterBase<char, int?>
         {
-            public int? Convert(char value) => value;
+            public override int? Convert(char value) => value;
         }
 
-        public class CharNullableLongConverter : ISpecializedConverter<char, long?>
+        public class CharNullableLongConverter : SpecializedConverterBase<char, long?>
         {
-            public long? Convert(char value) => value;
+            public override long? Convert(char value) => value;
         }
 
-        public class CharNullableRealmIntegerByteConverter : ISpecializedConverter<char, RealmInteger<byte>?>
+        public class CharNullableRealmIntegerByteConverter : SpecializedConverterBase<char, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(char value) => (byte)value;
+            public override RealmInteger<byte>? Convert(char value) => (byte)value;
         }
 
-        public class CharNullableRealmIntegerShortConverter : ISpecializedConverter<char, RealmInteger<short>?>
+        public class CharNullableRealmIntegerShortConverter : SpecializedConverterBase<char, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(char value) => (short)value;
+            public override RealmInteger<short>? Convert(char value) => (short)value;
         }
 
-        public class CharNullableRealmIntegerIntConverter : ISpecializedConverter<char, RealmInteger<int>?>
+        public class CharNullableRealmIntegerIntConverter : SpecializedConverterBase<char, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(char value) => value;
+            public override RealmInteger<int>? Convert(char value) => value;
         }
 
-        public class CharNullableRealmIntegerLongConverter : ISpecializedConverter<char, RealmInteger<long>?>
+        public class CharNullableRealmIntegerLongConverter : SpecializedConverterBase<char, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(char value) => value;
+            public override RealmInteger<long>? Convert(char value) => value;
         }
 
-        public class CharNullableFloatConverter : ISpecializedConverter<char, float?>
+        public class CharNullableFloatConverter : SpecializedConverterBase<char, float?>
         {
-            public float? Convert(char value) => value;
+            public override float? Convert(char value) => value;
         }
 
-        public class CharNullableDoubleConverter : ISpecializedConverter<char, double?>
+        public class CharNullableDoubleConverter : SpecializedConverterBase<char, double?>
         {
-            public double? Convert(char value) => value;
+            public override double? Convert(char value) => value;
         }
 
-        public class CharNullableDecimalConverter : ISpecializedConverter<char, decimal?>
+        public class CharNullableDecimalConverter : SpecializedConverterBase<char, decimal?>
         {
-            public decimal? Convert(char value) => value;
+            public override decimal? Convert(char value) => value;
         }
 
-        public class CharNullableDecimal128Converter : ISpecializedConverter<char, Decimal128?>
+        public class CharNullableDecimal128Converter : SpecializedConverterBase<char, Decimal128?>
         {
-            public Decimal128? Convert(char value) => value;
+            public override Decimal128? Convert(char value) => value;
         }
 
-        public class ByteNullableCharConverter : ISpecializedConverter<byte, char?>
+        public class ByteNullableCharConverter : SpecializedConverterBase<byte, char?>
         {
-            public char? Convert(byte value) => (char)value;
+            public override char? Convert(byte value) => (char)value;
         }
 
-        public class ByteNullableByteConverter : ISpecializedConverter<byte, byte?>
+        public class ByteNullableByteConverter : SpecializedConverterBase<byte, byte?>
         {
-            public byte? Convert(byte value) => value;
+            public override byte? Convert(byte value) => value;
         }
 
-        public class ByteNullableShortConverter : ISpecializedConverter<byte, short?>
+        public class ByteNullableShortConverter : SpecializedConverterBase<byte, short?>
         {
-            public short? Convert(byte value) => value;
+            public override short? Convert(byte value) => value;
         }
 
-        public class ByteNullableIntConverter : ISpecializedConverter<byte, int?>
+        public class ByteNullableIntConverter : SpecializedConverterBase<byte, int?>
         {
-            public int? Convert(byte value) => value;
+            public override int? Convert(byte value) => value;
         }
 
-        public class ByteNullableLongConverter : ISpecializedConverter<byte, long?>
+        public class ByteNullableLongConverter : SpecializedConverterBase<byte, long?>
         {
-            public long? Convert(byte value) => value;
+            public override long? Convert(byte value) => value;
         }
 
-        public class ByteNullableRealmIntegerByteConverter : ISpecializedConverter<byte, RealmInteger<byte>?>
+        public class ByteNullableRealmIntegerByteConverter : SpecializedConverterBase<byte, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(byte value) => value;
+            public override RealmInteger<byte>? Convert(byte value) => value;
         }
 
-        public class ByteNullableRealmIntegerShortConverter : ISpecializedConverter<byte, RealmInteger<short>?>
+        public class ByteNullableRealmIntegerShortConverter : SpecializedConverterBase<byte, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(byte value) => value;
+            public override RealmInteger<short>? Convert(byte value) => value;
         }
 
-        public class ByteNullableRealmIntegerIntConverter : ISpecializedConverter<byte, RealmInteger<int>?>
+        public class ByteNullableRealmIntegerIntConverter : SpecializedConverterBase<byte, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(byte value) => value;
+            public override RealmInteger<int>? Convert(byte value) => value;
         }
 
-        public class ByteNullableRealmIntegerLongConverter : ISpecializedConverter<byte, RealmInteger<long>?>
+        public class ByteNullableRealmIntegerLongConverter : SpecializedConverterBase<byte, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(byte value) => value;
+            public override RealmInteger<long>? Convert(byte value) => value;
         }
 
-        public class ByteNullableFloatConverter : ISpecializedConverter<byte, float?>
+        public class ByteNullableFloatConverter : SpecializedConverterBase<byte, float?>
         {
-            public float? Convert(byte value) => value;
+            public override float? Convert(byte value) => value;
         }
 
-        public class ByteNullableDoubleConverter : ISpecializedConverter<byte, double?>
+        public class ByteNullableDoubleConverter : SpecializedConverterBase<byte, double?>
         {
-            public double? Convert(byte value) => value;
+            public override double? Convert(byte value) => value;
         }
 
-        public class ByteNullableDecimalConverter : ISpecializedConverter<byte, decimal?>
+        public class ByteNullableDecimalConverter : SpecializedConverterBase<byte, decimal?>
         {
-            public decimal? Convert(byte value) => value;
+            public override decimal? Convert(byte value) => value;
         }
 
-        public class ByteNullableDecimal128Converter : ISpecializedConverter<byte, Decimal128?>
+        public class ByteNullableDecimal128Converter : SpecializedConverterBase<byte, Decimal128?>
         {
-            public Decimal128? Convert(byte value) => value;
+            public override Decimal128? Convert(byte value) => value;
         }
 
-        public class ShortNullableCharConverter : ISpecializedConverter<short, char?>
+        public class ShortNullableCharConverter : SpecializedConverterBase<short, char?>
         {
-            public char? Convert(short value) => (char)value;
+            public override char? Convert(short value) => (char)value;
         }
 
-        public class ShortNullableByteConverter : ISpecializedConverter<short, byte?>
+        public class ShortNullableByteConverter : SpecializedConverterBase<short, byte?>
         {
-            public byte? Convert(short value) => (byte)value;
+            public override byte? Convert(short value) => (byte)value;
         }
 
-        public class ShortNullableShortConverter : ISpecializedConverter<short, short?>
+        public class ShortNullableShortConverter : SpecializedConverterBase<short, short?>
         {
-            public short? Convert(short value) => value;
+            public override short? Convert(short value) => value;
         }
 
-        public class ShortNullableIntConverter : ISpecializedConverter<short, int?>
+        public class ShortNullableIntConverter : SpecializedConverterBase<short, int?>
         {
-            public int? Convert(short value) => value;
+            public override int? Convert(short value) => value;
         }
 
-        public class ShortNullableLongConverter : ISpecializedConverter<short, long?>
+        public class ShortNullableLongConverter : SpecializedConverterBase<short, long?>
         {
-            public long? Convert(short value) => value;
+            public override long? Convert(short value) => value;
         }
 
-        public class ShortNullableRealmIntegerByteConverter : ISpecializedConverter<short, RealmInteger<byte>?>
+        public class ShortNullableRealmIntegerByteConverter : SpecializedConverterBase<short, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(short value) => (byte)value;
+            public override RealmInteger<byte>? Convert(short value) => (byte)value;
         }
 
-        public class ShortNullableRealmIntegerShortConverter : ISpecializedConverter<short, RealmInteger<short>?>
+        public class ShortNullableRealmIntegerShortConverter : SpecializedConverterBase<short, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(short value) => value;
+            public override RealmInteger<short>? Convert(short value) => value;
         }
 
-        public class ShortNullableRealmIntegerIntConverter : ISpecializedConverter<short, RealmInteger<int>?>
+        public class ShortNullableRealmIntegerIntConverter : SpecializedConverterBase<short, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(short value) => value;
+            public override RealmInteger<int>? Convert(short value) => value;
         }
 
-        public class ShortNullableRealmIntegerLongConverter : ISpecializedConverter<short, RealmInteger<long>?>
+        public class ShortNullableRealmIntegerLongConverter : SpecializedConverterBase<short, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(short value) => value;
+            public override RealmInteger<long>? Convert(short value) => value;
         }
 
-        public class ShortNullableFloatConverter : ISpecializedConverter<short, float?>
+        public class ShortNullableFloatConverter : SpecializedConverterBase<short, float?>
         {
-            public float? Convert(short value) => value;
+            public override float? Convert(short value) => value;
         }
 
-        public class ShortNullableDoubleConverter : ISpecializedConverter<short, double?>
+        public class ShortNullableDoubleConverter : SpecializedConverterBase<short, double?>
         {
-            public double? Convert(short value) => value;
+            public override double? Convert(short value) => value;
         }
 
-        public class ShortNullableDecimalConverter : ISpecializedConverter<short, decimal?>
+        public class ShortNullableDecimalConverter : SpecializedConverterBase<short, decimal?>
         {
-            public decimal? Convert(short value) => value;
+            public override decimal? Convert(short value) => value;
         }
 
-        public class ShortNullableDecimal128Converter : ISpecializedConverter<short, Decimal128?>
+        public class ShortNullableDecimal128Converter : SpecializedConverterBase<short, Decimal128?>
         {
-            public Decimal128? Convert(short value) => value;
+            public override Decimal128? Convert(short value) => value;
         }
 
-        public class IntNullableCharConverter : ISpecializedConverter<int, char?>
+        public class IntNullableCharConverter : SpecializedConverterBase<int, char?>
         {
-            public char? Convert(int value) => (char)value;
+            public override char? Convert(int value) => (char)value;
         }
 
-        public class IntNullableByteConverter : ISpecializedConverter<int, byte?>
+        public class IntNullableByteConverter : SpecializedConverterBase<int, byte?>
         {
-            public byte? Convert(int value) => (byte)value;
+            public override byte? Convert(int value) => (byte)value;
         }
 
-        public class IntNullableShortConverter : ISpecializedConverter<int, short?>
+        public class IntNullableShortConverter : SpecializedConverterBase<int, short?>
         {
-            public short? Convert(int value) => (short)value;
+            public override short? Convert(int value) => (short)value;
         }
 
-        public class IntNullableIntConverter : ISpecializedConverter<int, int?>
+        public class IntNullableIntConverter : SpecializedConverterBase<int, int?>
         {
-            public int? Convert(int value) => value;
+            public override int? Convert(int value) => value;
         }
 
-        public class IntNullableLongConverter : ISpecializedConverter<int, long?>
+        public class IntNullableLongConverter : SpecializedConverterBase<int, long?>
         {
-            public long? Convert(int value) => value;
+            public override long? Convert(int value) => value;
         }
 
-        public class IntNullableRealmIntegerByteConverter : ISpecializedConverter<int, RealmInteger<byte>?>
+        public class IntNullableRealmIntegerByteConverter : SpecializedConverterBase<int, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(int value) => (byte)value;
+            public override RealmInteger<byte>? Convert(int value) => (byte)value;
         }
 
-        public class IntNullableRealmIntegerShortConverter : ISpecializedConverter<int, RealmInteger<short>?>
+        public class IntNullableRealmIntegerShortConverter : SpecializedConverterBase<int, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(int value) => (short)value;
+            public override RealmInteger<short>? Convert(int value) => (short)value;
         }
 
-        public class IntNullableRealmIntegerIntConverter : ISpecializedConverter<int, RealmInteger<int>?>
+        public class IntNullableRealmIntegerIntConverter : SpecializedConverterBase<int, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(int value) => value;
+            public override RealmInteger<int>? Convert(int value) => value;
         }
 
-        public class IntNullableRealmIntegerLongConverter : ISpecializedConverter<int, RealmInteger<long>?>
+        public class IntNullableRealmIntegerLongConverter : SpecializedConverterBase<int, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(int value) => value;
+            public override RealmInteger<long>? Convert(int value) => value;
         }
 
-        public class IntNullableFloatConverter : ISpecializedConverter<int, float?>
+        public class IntNullableFloatConverter : SpecializedConverterBase<int, float?>
         {
-            public float? Convert(int value) => value;
+            public override float? Convert(int value) => value;
         }
 
-        public class IntNullableDoubleConverter : ISpecializedConverter<int, double?>
+        public class IntNullableDoubleConverter : SpecializedConverterBase<int, double?>
         {
-            public double? Convert(int value) => value;
+            public override double? Convert(int value) => value;
         }
 
-        public class IntNullableDecimalConverter : ISpecializedConverter<int, decimal?>
+        public class IntNullableDecimalConverter : SpecializedConverterBase<int, decimal?>
         {
-            public decimal? Convert(int value) => value;
+            public override decimal? Convert(int value) => value;
         }
 
-        public class IntNullableDecimal128Converter : ISpecializedConverter<int, Decimal128?>
+        public class IntNullableDecimal128Converter : SpecializedConverterBase<int, Decimal128?>
         {
-            public Decimal128? Convert(int value) => value;
+            public override Decimal128? Convert(int value) => value;
         }
 
-        public class LongNullableCharConverter : ISpecializedConverter<long, char?>
+        public class LongNullableCharConverter : SpecializedConverterBase<long, char?>
         {
-            public char? Convert(long value) => (char)value;
+            public override char? Convert(long value) => (char)value;
         }
 
-        public class LongNullableByteConverter : ISpecializedConverter<long, byte?>
+        public class LongNullableByteConverter : SpecializedConverterBase<long, byte?>
         {
-            public byte? Convert(long value) => (byte)value;
+            public override byte? Convert(long value) => (byte)value;
         }
 
-        public class LongNullableShortConverter : ISpecializedConverter<long, short?>
+        public class LongNullableShortConverter : SpecializedConverterBase<long, short?>
         {
-            public short? Convert(long value) => (short)value;
+            public override short? Convert(long value) => (short)value;
         }
 
-        public class LongNullableIntConverter : ISpecializedConverter<long, int?>
+        public class LongNullableIntConverter : SpecializedConverterBase<long, int?>
         {
-            public int? Convert(long value) => (int)value;
+            public override int? Convert(long value) => (int)value;
         }
 
-        public class LongNullableLongConverter : ISpecializedConverter<long, long?>
+        public class LongNullableLongConverter : SpecializedConverterBase<long, long?>
         {
-            public long? Convert(long value) => value;
+            public override long? Convert(long value) => value;
         }
 
-        public class LongNullableRealmIntegerByteConverter : ISpecializedConverter<long, RealmInteger<byte>?>
+        public class LongNullableRealmIntegerByteConverter : SpecializedConverterBase<long, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(long value) => (byte)value;
+            public override RealmInteger<byte>? Convert(long value) => (byte)value;
         }
 
-        public class LongNullableRealmIntegerShortConverter : ISpecializedConverter<long, RealmInteger<short>?>
+        public class LongNullableRealmIntegerShortConverter : SpecializedConverterBase<long, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(long value) => (short)value;
+            public override RealmInteger<short>? Convert(long value) => (short)value;
         }
 
-        public class LongNullableRealmIntegerIntConverter : ISpecializedConverter<long, RealmInteger<int>?>
+        public class LongNullableRealmIntegerIntConverter : SpecializedConverterBase<long, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(long value) => (int)value;
+            public override RealmInteger<int>? Convert(long value) => (int)value;
         }
 
-        public class LongNullableRealmIntegerLongConverter : ISpecializedConverter<long, RealmInteger<long>?>
+        public class LongNullableRealmIntegerLongConverter : SpecializedConverterBase<long, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(long value) => value;
+            public override RealmInteger<long>? Convert(long value) => value;
         }
 
-        public class LongNullableFloatConverter : ISpecializedConverter<long, float?>
+        public class LongNullableFloatConverter : SpecializedConverterBase<long, float?>
         {
-            public float? Convert(long value) => value;
+            public override float? Convert(long value) => value;
         }
 
-        public class LongNullableDoubleConverter : ISpecializedConverter<long, double?>
+        public class LongNullableDoubleConverter : SpecializedConverterBase<long, double?>
         {
-            public double? Convert(long value) => value;
+            public override double? Convert(long value) => value;
         }
 
-        public class LongNullableDecimalConverter : ISpecializedConverter<long, decimal?>
+        public class LongNullableDecimalConverter : SpecializedConverterBase<long, decimal?>
         {
-            public decimal? Convert(long value) => value;
+            public override decimal? Convert(long value) => value;
         }
 
-        public class LongNullableDecimal128Converter : ISpecializedConverter<long, Decimal128?>
+        public class LongNullableDecimal128Converter : SpecializedConverterBase<long, Decimal128?>
         {
-            public Decimal128? Convert(long value) => value;
+            public override Decimal128? Convert(long value) => value;
         }
 
-        public class RealmIntegerByteNullableCharConverter : ISpecializedConverter<RealmInteger<byte>, char?>
+        public class RealmIntegerByteNullableCharConverter : SpecializedConverterBase<RealmInteger<byte>, char?>
         {
-            public char? Convert(RealmInteger<byte> value) => (char)(byte)value;
+            public override char? Convert(RealmInteger<byte> value) => (char)(byte)value;
         }
 
-        public class RealmIntegerByteNullableByteConverter : ISpecializedConverter<RealmInteger<byte>, byte?>
+        public class RealmIntegerByteNullableByteConverter : SpecializedConverterBase<RealmInteger<byte>, byte?>
         {
-            public byte? Convert(RealmInteger<byte> value) => value;
+            public override byte? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableShortConverter : ISpecializedConverter<RealmInteger<byte>, short?>
+        public class RealmIntegerByteNullableShortConverter : SpecializedConverterBase<RealmInteger<byte>, short?>
         {
-            public short? Convert(RealmInteger<byte> value) => value;
+            public override short? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableIntConverter : ISpecializedConverter<RealmInteger<byte>, int?>
+        public class RealmIntegerByteNullableIntConverter : SpecializedConverterBase<RealmInteger<byte>, int?>
         {
-            public int? Convert(RealmInteger<byte> value) => value;
+            public override int? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableLongConverter : ISpecializedConverter<RealmInteger<byte>, long?>
+        public class RealmIntegerByteNullableLongConverter : SpecializedConverterBase<RealmInteger<byte>, long?>
         {
-            public long? Convert(RealmInteger<byte> value) => value;
+            public override long? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<byte>?>
+        public class RealmIntegerByteNullableRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(RealmInteger<byte> value) => value;
+            public override RealmInteger<byte>? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<short>?>
+        public class RealmIntegerByteNullableRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(RealmInteger<byte> value) => (short)value;
+            public override RealmInteger<short>? Convert(RealmInteger<byte> value) => (short)value;
         }
 
-        public class RealmIntegerByteNullableRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<int>?>
+        public class RealmIntegerByteNullableRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(RealmInteger<byte> value) => (int)value;
+            public override RealmInteger<int>? Convert(RealmInteger<byte> value) => (int)value;
         }
 
-        public class RealmIntegerByteNullableRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<long>?>
+        public class RealmIntegerByteNullableRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(RealmInteger<byte> value) => (long)value;
+            public override RealmInteger<long>? Convert(RealmInteger<byte> value) => (long)value;
         }
 
-        public class RealmIntegerByteNullableFloatConverter : ISpecializedConverter<RealmInteger<byte>, float?>
+        public class RealmIntegerByteNullableFloatConverter : SpecializedConverterBase<RealmInteger<byte>, float?>
         {
-            public float? Convert(RealmInteger<byte> value) => value;
+            public override float? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableDoubleConverter : ISpecializedConverter<RealmInteger<byte>, double?>
+        public class RealmIntegerByteNullableDoubleConverter : SpecializedConverterBase<RealmInteger<byte>, double?>
         {
-            public double? Convert(RealmInteger<byte> value) => value;
+            public override double? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableDecimalConverter : ISpecializedConverter<RealmInteger<byte>, decimal?>
+        public class RealmIntegerByteNullableDecimalConverter : SpecializedConverterBase<RealmInteger<byte>, decimal?>
         {
-            public decimal? Convert(RealmInteger<byte> value) => value;
+            public override decimal? Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteNullableDecimal128Converter : ISpecializedConverter<RealmInteger<byte>, Decimal128?>
+        public class RealmIntegerByteNullableDecimal128Converter : SpecializedConverterBase<RealmInteger<byte>, Decimal128?>
         {
-            public Decimal128? Convert(RealmInteger<byte> value) => (byte)value;
+            public override Decimal128? Convert(RealmInteger<byte> value) => (byte)value;
         }
 
-        public class RealmIntegerShortNullableCharConverter : ISpecializedConverter<RealmInteger<short>, char?>
+        public class RealmIntegerShortNullableCharConverter : SpecializedConverterBase<RealmInteger<short>, char?>
         {
-            public char? Convert(RealmInteger<short> value) => (char)(short)value;
+            public override char? Convert(RealmInteger<short> value) => (char)(short)value;
         }
 
-        public class RealmIntegerShortNullableByteConverter : ISpecializedConverter<RealmInteger<short>, byte?>
+        public class RealmIntegerShortNullableByteConverter : SpecializedConverterBase<RealmInteger<short>, byte?>
         {
-            public byte? Convert(RealmInteger<short> value) => (byte)value;
+            public override byte? Convert(RealmInteger<short> value) => (byte)value;
         }
 
-        public class RealmIntegerShortNullableShortConverter : ISpecializedConverter<RealmInteger<short>, short?>
+        public class RealmIntegerShortNullableShortConverter : SpecializedConverterBase<RealmInteger<short>, short?>
         {
-            public short? Convert(RealmInteger<short> value) => value;
+            public override short? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableIntConverter : ISpecializedConverter<RealmInteger<short>, int?>
+        public class RealmIntegerShortNullableIntConverter : SpecializedConverterBase<RealmInteger<short>, int?>
         {
-            public int? Convert(RealmInteger<short> value) => value;
+            public override int? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableLongConverter : ISpecializedConverter<RealmInteger<short>, long?>
+        public class RealmIntegerShortNullableLongConverter : SpecializedConverterBase<RealmInteger<short>, long?>
         {
-            public long? Convert(RealmInteger<short> value) => value;
+            public override long? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<byte>?>
+        public class RealmIntegerShortNullableRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(RealmInteger<short> value) => (byte)value;
+            public override RealmInteger<byte>? Convert(RealmInteger<short> value) => (byte)value;
         }
 
-        public class RealmIntegerShortNullableRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<short>?>
+        public class RealmIntegerShortNullableRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(RealmInteger<short> value) => value;
+            public override RealmInteger<short>? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<int>?>
+        public class RealmIntegerShortNullableRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(RealmInteger<short> value) => (int)value;
+            public override RealmInteger<int>? Convert(RealmInteger<short> value) => (int)value;
         }
 
-        public class RealmIntegerShortNullableRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<long>?>
+        public class RealmIntegerShortNullableRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(RealmInteger<short> value) => (long)value;
+            public override RealmInteger<long>? Convert(RealmInteger<short> value) => (long)value;
         }
 
-        public class RealmIntegerShortNullableFloatConverter : ISpecializedConverter<RealmInteger<short>, float?>
+        public class RealmIntegerShortNullableFloatConverter : SpecializedConverterBase<RealmInteger<short>, float?>
         {
-            public float? Convert(RealmInteger<short> value) => value;
+            public override float? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableDoubleConverter : ISpecializedConverter<RealmInteger<short>, double?>
+        public class RealmIntegerShortNullableDoubleConverter : SpecializedConverterBase<RealmInteger<short>, double?>
         {
-            public double? Convert(RealmInteger<short> value) => value;
+            public override double? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableDecimalConverter : ISpecializedConverter<RealmInteger<short>, decimal?>
+        public class RealmIntegerShortNullableDecimalConverter : SpecializedConverterBase<RealmInteger<short>, decimal?>
         {
-            public decimal? Convert(RealmInteger<short> value) => value;
+            public override decimal? Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortNullableDecimal128Converter : ISpecializedConverter<RealmInteger<short>, Decimal128?>
+        public class RealmIntegerShortNullableDecimal128Converter : SpecializedConverterBase<RealmInteger<short>, Decimal128?>
         {
-            public Decimal128? Convert(RealmInteger<short> value) => (short)value;
+            public override Decimal128? Convert(RealmInteger<short> value) => (short)value;
         }
 
-        public class RealmIntegerIntNullableCharConverter : ISpecializedConverter<RealmInteger<int>, char?>
+        public class RealmIntegerIntNullableCharConverter : SpecializedConverterBase<RealmInteger<int>, char?>
         {
-            public char? Convert(RealmInteger<int> value) => (char)value;
+            public override char? Convert(RealmInteger<int> value) => (char)value;
         }
 
-        public class RealmIntegerIntNullableByteConverter : ISpecializedConverter<RealmInteger<int>, byte?>
+        public class RealmIntegerIntNullableByteConverter : SpecializedConverterBase<RealmInteger<int>, byte?>
         {
-            public byte? Convert(RealmInteger<int> value) => (byte)value;
+            public override byte? Convert(RealmInteger<int> value) => (byte)value;
         }
 
-        public class RealmIntegerIntNullableShortConverter : ISpecializedConverter<RealmInteger<int>, short?>
+        public class RealmIntegerIntNullableShortConverter : SpecializedConverterBase<RealmInteger<int>, short?>
         {
-            public short? Convert(RealmInteger<int> value) => (short)value;
+            public override short? Convert(RealmInteger<int> value) => (short)value;
         }
 
-        public class RealmIntegerIntNullableIntConverter : ISpecializedConverter<RealmInteger<int>, int?>
+        public class RealmIntegerIntNullableIntConverter : SpecializedConverterBase<RealmInteger<int>, int?>
         {
-            public int? Convert(RealmInteger<int> value) => value;
+            public override int? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableLongConverter : ISpecializedConverter<RealmInteger<int>, long?>
+        public class RealmIntegerIntNullableLongConverter : SpecializedConverterBase<RealmInteger<int>, long?>
         {
-            public long? Convert(RealmInteger<int> value) => value;
+            public override long? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<byte>?>
+        public class RealmIntegerIntNullableRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(RealmInteger<int> value) => (byte)value;
+            public override RealmInteger<byte>? Convert(RealmInteger<int> value) => (byte)value;
         }
 
-        public class RealmIntegerIntNullableRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<short>?>
+        public class RealmIntegerIntNullableRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(RealmInteger<int> value) => (short)value;
+            public override RealmInteger<short>? Convert(RealmInteger<int> value) => (short)value;
         }
 
-        public class RealmIntegerIntNullableRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<int>?>
+        public class RealmIntegerIntNullableRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(RealmInteger<int> value) => value;
+            public override RealmInteger<int>? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<long>?>
+        public class RealmIntegerIntNullableRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(RealmInteger<int> value) => (long)value;
+            public override RealmInteger<long>? Convert(RealmInteger<int> value) => (long)value;
         }
 
-        public class RealmIntegerIntNullableFloatConverter : ISpecializedConverter<RealmInteger<int>, float?>
+        public class RealmIntegerIntNullableFloatConverter : SpecializedConverterBase<RealmInteger<int>, float?>
         {
-            public float? Convert(RealmInteger<int> value) => value;
+            public override float? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableDoubleConverter : ISpecializedConverter<RealmInteger<int>, double?>
+        public class RealmIntegerIntNullableDoubleConverter : SpecializedConverterBase<RealmInteger<int>, double?>
         {
-            public double? Convert(RealmInteger<int> value) => value;
+            public override double? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableDecimalConverter : ISpecializedConverter<RealmInteger<int>, decimal?>
+        public class RealmIntegerIntNullableDecimalConverter : SpecializedConverterBase<RealmInteger<int>, decimal?>
         {
-            public decimal? Convert(RealmInteger<int> value) => value;
+            public override decimal? Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntNullableDecimal128Converter : ISpecializedConverter<RealmInteger<int>, Decimal128?>
+        public class RealmIntegerIntNullableDecimal128Converter : SpecializedConverterBase<RealmInteger<int>, Decimal128?>
         {
-            public Decimal128? Convert(RealmInteger<int> value) => (int)value;
+            public override Decimal128? Convert(RealmInteger<int> value) => (int)value;
         }
 
-        public class RealmIntegerLongNullableCharConverter : ISpecializedConverter<RealmInteger<long>, char?>
+        public class RealmIntegerLongNullableCharConverter : SpecializedConverterBase<RealmInteger<long>, char?>
         {
-            public char? Convert(RealmInteger<long> value) => (char)value;
+            public override char? Convert(RealmInteger<long> value) => (char)value;
         }
 
-        public class RealmIntegerLongNullableByteConverter : ISpecializedConverter<RealmInteger<long>, byte?>
+        public class RealmIntegerLongNullableByteConverter : SpecializedConverterBase<RealmInteger<long>, byte?>
         {
-            public byte? Convert(RealmInteger<long> value) => (byte)value;
+            public override byte? Convert(RealmInteger<long> value) => (byte)value;
         }
 
-        public class RealmIntegerLongNullableShortConverter : ISpecializedConverter<RealmInteger<long>, short?>
+        public class RealmIntegerLongNullableShortConverter : SpecializedConverterBase<RealmInteger<long>, short?>
         {
-            public short? Convert(RealmInteger<long> value) => (short)value;
+            public override short? Convert(RealmInteger<long> value) => (short)value;
         }
 
-        public class RealmIntegerLongNullableIntConverter : ISpecializedConverter<RealmInteger<long>, int?>
+        public class RealmIntegerLongNullableIntConverter : SpecializedConverterBase<RealmInteger<long>, int?>
         {
-            public int? Convert(RealmInteger<long> value) => (int)value;
+            public override int? Convert(RealmInteger<long> value) => (int)value;
         }
 
-        public class RealmIntegerLongNullableLongConverter : ISpecializedConverter<RealmInteger<long>, long?>
+        public class RealmIntegerLongNullableLongConverter : SpecializedConverterBase<RealmInteger<long>, long?>
         {
-            public long? Convert(RealmInteger<long> value) => value;
+            public override long? Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongNullableRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<byte>?>
+        public class RealmIntegerLongNullableRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<byte>?>
         {
-            public RealmInteger<byte>? Convert(RealmInteger<long> value) => (byte)value;
+            public override RealmInteger<byte>? Convert(RealmInteger<long> value) => (byte)value;
         }
 
-        public class RealmIntegerLongNullableRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<short>?>
+        public class RealmIntegerLongNullableRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<short>?>
         {
-            public RealmInteger<short>? Convert(RealmInteger<long> value) => (short)value;
+            public override RealmInteger<short>? Convert(RealmInteger<long> value) => (short)value;
         }
 
-        public class RealmIntegerLongNullableRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<int>?>
+        public class RealmIntegerLongNullableRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<int>?>
         {
-            public RealmInteger<int>? Convert(RealmInteger<long> value) => (int)value;
+            public override RealmInteger<int>? Convert(RealmInteger<long> value) => (int)value;
         }
 
-        public class RealmIntegerLongNullableRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<long>?>
+        public class RealmIntegerLongNullableRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<long>?>
         {
-            public RealmInteger<long>? Convert(RealmInteger<long> value) => value;
+            public override RealmInteger<long>? Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongNullableFloatConverter : ISpecializedConverter<RealmInteger<long>, float?>
+        public class RealmIntegerLongNullableFloatConverter : SpecializedConverterBase<RealmInteger<long>, float?>
         {
-            public float? Convert(RealmInteger<long> value) => value;
+            public override float? Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongNullableDoubleConverter : ISpecializedConverter<RealmInteger<long>, double?>
+        public class RealmIntegerLongNullableDoubleConverter : SpecializedConverterBase<RealmInteger<long>, double?>
         {
-            public double? Convert(RealmInteger<long> value) => value;
+            public override double? Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongNullableDecimalConverter : ISpecializedConverter<RealmInteger<long>, decimal?>
+        public class RealmIntegerLongNullableDecimalConverter : SpecializedConverterBase<RealmInteger<long>, decimal?>
         {
-            public decimal? Convert(RealmInteger<long> value) => value;
+            public override decimal? Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongNullableDecimal128Converter : ISpecializedConverter<RealmInteger<long>, Decimal128?>
+        public class RealmIntegerLongNullableDecimal128Converter : SpecializedConverterBase<RealmInteger<long>, Decimal128?>
         {
-            public Decimal128? Convert(RealmInteger<long> value) => (long)value;
+            public override Decimal128? Convert(RealmInteger<long> value) => (long)value;
         }
 
-        public class CharByteConverter : ISpecializedConverter<char, byte>
+        public class CharByteConverter : SpecializedConverterBase<char, byte>
         {
-            public byte Convert(char value) => (byte)value;
+            public override byte Convert(char value) => (byte)value;
         }
 
-        public class CharShortConverter : ISpecializedConverter<char, short>
+        public class CharShortConverter : SpecializedConverterBase<char, short>
         {
-            public short Convert(char value) => (short)value;
+            public override short Convert(char value) => (short)value;
         }
 
-        public class CharIntConverter : ISpecializedConverter<char, int>
+        public class CharIntConverter : SpecializedConverterBase<char, int>
         {
-            public int Convert(char value) => value;
+            public override int Convert(char value) => value;
         }
 
-        public class CharLongConverter : ISpecializedConverter<char, long>
+        public class CharLongConverter : SpecializedConverterBase<char, long>
         {
-            public long Convert(char value) => value;
+            public override long Convert(char value) => value;
         }
 
-        public class CharRealmIntegerByteConverter : ISpecializedConverter<char, RealmInteger<byte>>
+        public class CharRealmIntegerByteConverter : SpecializedConverterBase<char, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(char value) => (byte)value;
+            public override RealmInteger<byte> Convert(char value) => (byte)value;
         }
 
-        public class CharRealmIntegerShortConverter : ISpecializedConverter<char, RealmInteger<short>>
+        public class CharRealmIntegerShortConverter : SpecializedConverterBase<char, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(char value) => (short)value;
+            public override RealmInteger<short> Convert(char value) => (short)value;
         }
 
-        public class CharRealmIntegerIntConverter : ISpecializedConverter<char, RealmInteger<int>>
+        public class CharRealmIntegerIntConverter : SpecializedConverterBase<char, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(char value) => value;
+            public override RealmInteger<int> Convert(char value) => value;
         }
 
-        public class CharRealmIntegerLongConverter : ISpecializedConverter<char, RealmInteger<long>>
+        public class CharRealmIntegerLongConverter : SpecializedConverterBase<char, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(char value) => value;
+            public override RealmInteger<long> Convert(char value) => value;
         }
 
-        public class CharFloatConverter : ISpecializedConverter<char, float>
+        public class CharFloatConverter : SpecializedConverterBase<char, float>
         {
-            public float Convert(char value) => value;
+            public override float Convert(char value) => value;
         }
 
-        public class CharDoubleConverter : ISpecializedConverter<char, double>
+        public class CharDoubleConverter : SpecializedConverterBase<char, double>
         {
-            public double Convert(char value) => value;
+            public override double Convert(char value) => value;
         }
 
-        public class CharDecimalConverter : ISpecializedConverter<char, decimal>
+        public class CharDecimalConverter : SpecializedConverterBase<char, decimal>
         {
-            public decimal Convert(char value) => value;
+            public override decimal Convert(char value) => value;
         }
 
-        public class CharDecimal128Converter : ISpecializedConverter<char, Decimal128>
+        public class CharDecimal128Converter : SpecializedConverterBase<char, Decimal128>
         {
-            public Decimal128 Convert(char value) => value;
+            public override Decimal128 Convert(char value) => value;
         }
 
-        public class ByteCharConverter : ISpecializedConverter<byte, char>
+        public class ByteCharConverter : SpecializedConverterBase<byte, char>
         {
-            public char Convert(byte value) => (char)value;
+            public override char Convert(byte value) => (char)value;
         }
 
-        public class ByteShortConverter : ISpecializedConverter<byte, short>
+        public class ByteShortConverter : SpecializedConverterBase<byte, short>
         {
-            public short Convert(byte value) => value;
+            public override short Convert(byte value) => value;
         }
 
-        public class ByteIntConverter : ISpecializedConverter<byte, int>
+        public class ByteIntConverter : SpecializedConverterBase<byte, int>
         {
-            public int Convert(byte value) => value;
+            public override int Convert(byte value) => value;
         }
 
-        public class ByteLongConverter : ISpecializedConverter<byte, long>
+        public class ByteLongConverter : SpecializedConverterBase<byte, long>
         {
-            public long Convert(byte value) => value;
+            public override long Convert(byte value) => value;
         }
 
-        public class ByteRealmIntegerByteConverter : ISpecializedConverter<byte, RealmInteger<byte>>
+        public class ByteRealmIntegerByteConverter : SpecializedConverterBase<byte, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(byte value) => value;
+            public override RealmInteger<byte> Convert(byte value) => value;
         }
 
-        public class ByteRealmIntegerShortConverter : ISpecializedConverter<byte, RealmInteger<short>>
+        public class ByteRealmIntegerShortConverter : SpecializedConverterBase<byte, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(byte value) => value;
+            public override RealmInteger<short> Convert(byte value) => value;
         }
 
-        public class ByteRealmIntegerIntConverter : ISpecializedConverter<byte, RealmInteger<int>>
+        public class ByteRealmIntegerIntConverter : SpecializedConverterBase<byte, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(byte value) => value;
+            public override RealmInteger<int> Convert(byte value) => value;
         }
 
-        public class ByteRealmIntegerLongConverter : ISpecializedConverter<byte, RealmInteger<long>>
+        public class ByteRealmIntegerLongConverter : SpecializedConverterBase<byte, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(byte value) => value;
+            public override RealmInteger<long> Convert(byte value) => value;
         }
 
-        public class ByteFloatConverter : ISpecializedConverter<byte, float>
+        public class ByteFloatConverter : SpecializedConverterBase<byte, float>
         {
-            public float Convert(byte value) => value;
+            public override float Convert(byte value) => value;
         }
 
-        public class ByteDoubleConverter : ISpecializedConverter<byte, double>
+        public class ByteDoubleConverter : SpecializedConverterBase<byte, double>
         {
-            public double Convert(byte value) => value;
+            public override double Convert(byte value) => value;
         }
 
-        public class ByteDecimalConverter : ISpecializedConverter<byte, decimal>
+        public class ByteDecimalConverter : SpecializedConverterBase<byte, decimal>
         {
-            public decimal Convert(byte value) => value;
+            public override decimal Convert(byte value) => value;
         }
 
-        public class ByteDecimal128Converter : ISpecializedConverter<byte, Decimal128>
+        public class ByteDecimal128Converter : SpecializedConverterBase<byte, Decimal128>
         {
-            public Decimal128 Convert(byte value) => value;
+            public override Decimal128 Convert(byte value) => value;
         }
 
-        public class ShortCharConverter : ISpecializedConverter<short, char>
+        public class ShortCharConverter : SpecializedConverterBase<short, char>
         {
-            public char Convert(short value) => (char)value;
+            public override char Convert(short value) => (char)value;
         }
 
-        public class ShortByteConverter : ISpecializedConverter<short, byte>
+        public class ShortByteConverter : SpecializedConverterBase<short, byte>
         {
-            public byte Convert(short value) => (byte)value;
+            public override byte Convert(short value) => (byte)value;
         }
 
-        public class ShortIntConverter : ISpecializedConverter<short, int>
+        public class ShortIntConverter : SpecializedConverterBase<short, int>
         {
-            public int Convert(short value) => value;
+            public override int Convert(short value) => value;
         }
 
-        public class ShortLongConverter : ISpecializedConverter<short, long>
+        public class ShortLongConverter : SpecializedConverterBase<short, long>
         {
-            public long Convert(short value) => value;
+            public override long Convert(short value) => value;
         }
 
-        public class ShortRealmIntegerByteConverter : ISpecializedConverter<short, RealmInteger<byte>>
+        public class ShortRealmIntegerByteConverter : SpecializedConverterBase<short, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(short value) => (byte)value;
+            public override RealmInteger<byte> Convert(short value) => (byte)value;
         }
 
-        public class ShortRealmIntegerShortConverter : ISpecializedConverter<short, RealmInteger<short>>
+        public class ShortRealmIntegerShortConverter : SpecializedConverterBase<short, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(short value) => value;
+            public override RealmInteger<short> Convert(short value) => value;
         }
 
-        public class ShortRealmIntegerIntConverter : ISpecializedConverter<short, RealmInteger<int>>
+        public class ShortRealmIntegerIntConverter : SpecializedConverterBase<short, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(short value) => value;
+            public override RealmInteger<int> Convert(short value) => value;
         }
 
-        public class ShortRealmIntegerLongConverter : ISpecializedConverter<short, RealmInteger<long>>
+        public class ShortRealmIntegerLongConverter : SpecializedConverterBase<short, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(short value) => value;
+            public override RealmInteger<long> Convert(short value) => value;
         }
 
-        public class ShortFloatConverter : ISpecializedConverter<short, float>
+        public class ShortFloatConverter : SpecializedConverterBase<short, float>
         {
-            public float Convert(short value) => value;
+            public override float Convert(short value) => value;
         }
 
-        public class ShortDoubleConverter : ISpecializedConverter<short, double>
+        public class ShortDoubleConverter : SpecializedConverterBase<short, double>
         {
-            public double Convert(short value) => value;
+            public override double Convert(short value) => value;
         }
 
-        public class ShortDecimalConverter : ISpecializedConverter<short, decimal>
+        public class ShortDecimalConverter : SpecializedConverterBase<short, decimal>
         {
-            public decimal Convert(short value) => value;
+            public override decimal Convert(short value) => value;
         }
 
-        public class ShortDecimal128Converter : ISpecializedConverter<short, Decimal128>
+        public class ShortDecimal128Converter : SpecializedConverterBase<short, Decimal128>
         {
-            public Decimal128 Convert(short value) => value;
+            public override Decimal128 Convert(short value) => value;
         }
 
-        public class IntCharConverter : ISpecializedConverter<int, char>
+        public class IntCharConverter : SpecializedConverterBase<int, char>
         {
-            public char Convert(int value) => (char)value;
+            public override char Convert(int value) => (char)value;
         }
 
-        public class IntByteConverter : ISpecializedConverter<int, byte>
+        public class IntByteConverter : SpecializedConverterBase<int, byte>
         {
-            public byte Convert(int value) => (byte)value;
+            public override byte Convert(int value) => (byte)value;
         }
 
-        public class IntShortConverter : ISpecializedConverter<int, short>
+        public class IntShortConverter : SpecializedConverterBase<int, short>
         {
-            public short Convert(int value) => (short)value;
+            public override short Convert(int value) => (short)value;
         }
 
-        public class IntLongConverter : ISpecializedConverter<int, long>
+        public class IntLongConverter : SpecializedConverterBase<int, long>
         {
-            public long Convert(int value) => value;
+            public override long Convert(int value) => value;
         }
 
-        public class IntRealmIntegerByteConverter : ISpecializedConverter<int, RealmInteger<byte>>
+        public class IntRealmIntegerByteConverter : SpecializedConverterBase<int, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(int value) => (byte)value;
+            public override RealmInteger<byte> Convert(int value) => (byte)value;
         }
 
-        public class IntRealmIntegerShortConverter : ISpecializedConverter<int, RealmInteger<short>>
+        public class IntRealmIntegerShortConverter : SpecializedConverterBase<int, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(int value) => (short)value;
+            public override RealmInteger<short> Convert(int value) => (short)value;
         }
 
-        public class IntRealmIntegerIntConverter : ISpecializedConverter<int, RealmInteger<int>>
+        public class IntRealmIntegerIntConverter : SpecializedConverterBase<int, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(int value) => value;
+            public override RealmInteger<int> Convert(int value) => value;
         }
 
-        public class IntRealmIntegerLongConverter : ISpecializedConverter<int, RealmInteger<long>>
+        public class IntRealmIntegerLongConverter : SpecializedConverterBase<int, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(int value) => value;
+            public override RealmInteger<long> Convert(int value) => value;
         }
 
-        public class IntFloatConverter : ISpecializedConverter<int, float>
+        public class IntFloatConverter : SpecializedConverterBase<int, float>
         {
-            public float Convert(int value) => value;
+            public override float Convert(int value) => value;
         }
 
-        public class IntDoubleConverter : ISpecializedConverter<int, double>
+        public class IntDoubleConverter : SpecializedConverterBase<int, double>
         {
-            public double Convert(int value) => value;
+            public override double Convert(int value) => value;
         }
 
-        public class IntDecimalConverter : ISpecializedConverter<int, decimal>
+        public class IntDecimalConverter : SpecializedConverterBase<int, decimal>
         {
-            public decimal Convert(int value) => value;
+            public override decimal Convert(int value) => value;
         }
 
-        public class IntDecimal128Converter : ISpecializedConverter<int, Decimal128>
+        public class IntDecimal128Converter : SpecializedConverterBase<int, Decimal128>
         {
-            public Decimal128 Convert(int value) => value;
+            public override Decimal128 Convert(int value) => value;
         }
 
-        public class LongCharConverter : ISpecializedConverter<long, char>
+        public class LongCharConverter : SpecializedConverterBase<long, char>
         {
-            public char Convert(long value) => (char)value;
+            public override char Convert(long value) => (char)value;
         }
 
-        public class LongByteConverter : ISpecializedConverter<long, byte>
+        public class LongByteConverter : SpecializedConverterBase<long, byte>
         {
-            public byte Convert(long value) => (byte)value;
+            public override byte Convert(long value) => (byte)value;
         }
 
-        public class LongShortConverter : ISpecializedConverter<long, short>
+        public class LongShortConverter : SpecializedConverterBase<long, short>
         {
-            public short Convert(long value) => (short)value;
+            public override short Convert(long value) => (short)value;
         }
 
-        public class LongIntConverter : ISpecializedConverter<long, int>
+        public class LongIntConverter : SpecializedConverterBase<long, int>
         {
-            public int Convert(long value) => (int)value;
+            public override int Convert(long value) => (int)value;
         }
 
-        public class LongRealmIntegerByteConverter : ISpecializedConverter<long, RealmInteger<byte>>
+        public class LongRealmIntegerByteConverter : SpecializedConverterBase<long, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(long value) => (byte)value;
+            public override RealmInteger<byte> Convert(long value) => (byte)value;
         }
 
-        public class LongRealmIntegerShortConverter : ISpecializedConverter<long, RealmInteger<short>>
+        public class LongRealmIntegerShortConverter : SpecializedConverterBase<long, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(long value) => (short)value;
+            public override RealmInteger<short> Convert(long value) => (short)value;
         }
 
-        public class LongRealmIntegerIntConverter : ISpecializedConverter<long, RealmInteger<int>>
+        public class LongRealmIntegerIntConverter : SpecializedConverterBase<long, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(long value) => (int)value;
+            public override RealmInteger<int> Convert(long value) => (int)value;
         }
 
-        public class LongRealmIntegerLongConverter : ISpecializedConverter<long, RealmInteger<long>>
+        public class LongRealmIntegerLongConverter : SpecializedConverterBase<long, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(long value) => value;
+            public override RealmInteger<long> Convert(long value) => value;
         }
 
-        public class LongFloatConverter : ISpecializedConverter<long, float>
+        public class LongFloatConverter : SpecializedConverterBase<long, float>
         {
-            public float Convert(long value) => value;
+            public override float Convert(long value) => value;
         }
 
-        public class LongDoubleConverter : ISpecializedConverter<long, double>
+        public class LongDoubleConverter : SpecializedConverterBase<long, double>
         {
-            public double Convert(long value) => value;
+            public override double Convert(long value) => value;
         }
 
-        public class LongDecimalConverter : ISpecializedConverter<long, decimal>
+        public class LongDecimalConverter : SpecializedConverterBase<long, decimal>
         {
-            public decimal Convert(long value) => value;
+            public override decimal Convert(long value) => value;
         }
 
-        public class LongDecimal128Converter : ISpecializedConverter<long, Decimal128>
+        public class LongDecimal128Converter : SpecializedConverterBase<long, Decimal128>
         {
-            public Decimal128 Convert(long value) => value;
+            public override Decimal128 Convert(long value) => value;
         }
 
-        public class RealmIntegerByteCharConverter : ISpecializedConverter<RealmInteger<byte>, char>
+        public class RealmIntegerByteCharConverter : SpecializedConverterBase<RealmInteger<byte>, char>
         {
-            public char Convert(RealmInteger<byte> value) => (char)(byte)value;
+            public override char Convert(RealmInteger<byte> value) => (char)(byte)value;
         }
 
-        public class RealmIntegerByteByteConverter : ISpecializedConverter<RealmInteger<byte>, byte>
+        public class RealmIntegerByteByteConverter : SpecializedConverterBase<RealmInteger<byte>, byte>
         {
-            public byte Convert(RealmInteger<byte> value) => value;
+            public override byte Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteShortConverter : ISpecializedConverter<RealmInteger<byte>, short>
+        public class RealmIntegerByteShortConverter : SpecializedConverterBase<RealmInteger<byte>, short>
         {
-            public short Convert(RealmInteger<byte> value) => value;
+            public override short Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteIntConverter : ISpecializedConverter<RealmInteger<byte>, int>
+        public class RealmIntegerByteIntConverter : SpecializedConverterBase<RealmInteger<byte>, int>
         {
-            public int Convert(RealmInteger<byte> value) => value;
+            public override int Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteLongConverter : ISpecializedConverter<RealmInteger<byte>, long>
+        public class RealmIntegerByteLongConverter : SpecializedConverterBase<RealmInteger<byte>, long>
         {
-            public long Convert(RealmInteger<byte> value) => value;
+            public override long Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<short>>
+        public class RealmIntegerByteRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(RealmInteger<byte> value) => (short)value;
+            public override RealmInteger<short> Convert(RealmInteger<byte> value) => (short)value;
         }
 
-        public class RealmIntegerByteRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<int>>
+        public class RealmIntegerByteRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(RealmInteger<byte> value) => (int)value;
+            public override RealmInteger<int> Convert(RealmInteger<byte> value) => (int)value;
         }
 
-        public class RealmIntegerByteRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<byte>, RealmInteger<long>>
+        public class RealmIntegerByteRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<byte>, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(RealmInteger<byte> value) => (long)value;
+            public override RealmInteger<long> Convert(RealmInteger<byte> value) => (long)value;
         }
 
-        public class RealmIntegerByteFloatConverter : ISpecializedConverter<RealmInteger<byte>, float>
+        public class RealmIntegerByteFloatConverter : SpecializedConverterBase<RealmInteger<byte>, float>
         {
-            public float Convert(RealmInteger<byte> value) => value;
+            public override float Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteDoubleConverter : ISpecializedConverter<RealmInteger<byte>, double>
+        public class RealmIntegerByteDoubleConverter : SpecializedConverterBase<RealmInteger<byte>, double>
         {
-            public double Convert(RealmInteger<byte> value) => value;
+            public override double Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteDecimalConverter : ISpecializedConverter<RealmInteger<byte>, decimal>
+        public class RealmIntegerByteDecimalConverter : SpecializedConverterBase<RealmInteger<byte>, decimal>
         {
-            public decimal Convert(RealmInteger<byte> value) => value;
+            public override decimal Convert(RealmInteger<byte> value) => value;
         }
 
-        public class RealmIntegerByteDecimal128Converter : ISpecializedConverter<RealmInteger<byte>, Decimal128>
+        public class RealmIntegerByteDecimal128Converter : SpecializedConverterBase<RealmInteger<byte>, Decimal128>
         {
-            public Decimal128 Convert(RealmInteger<byte> value) => (byte)value;
+            public override Decimal128 Convert(RealmInteger<byte> value) => (byte)value;
         }
 
-        public class RealmIntegerShortCharConverter : ISpecializedConverter<RealmInteger<short>, char>
+        public class RealmIntegerShortCharConverter : SpecializedConverterBase<RealmInteger<short>, char>
         {
-            public char Convert(RealmInteger<short> value) => (char)(short)value;
+            public override char Convert(RealmInteger<short> value) => (char)(short)value;
         }
 
-        public class RealmIntegerShortByteConverter : ISpecializedConverter<RealmInteger<short>, byte>
+        public class RealmIntegerShortByteConverter : SpecializedConverterBase<RealmInteger<short>, byte>
         {
-            public byte Convert(RealmInteger<short> value) => (byte)value;
+            public override byte Convert(RealmInteger<short> value) => (byte)value;
         }
 
-        public class RealmIntegerShortShortConverter : ISpecializedConverter<RealmInteger<short>, short>
+        public class RealmIntegerShortShortConverter : SpecializedConverterBase<RealmInteger<short>, short>
         {
-            public short Convert(RealmInteger<short> value) => value;
+            public override short Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortIntConverter : ISpecializedConverter<RealmInteger<short>, int>
+        public class RealmIntegerShortIntConverter : SpecializedConverterBase<RealmInteger<short>, int>
         {
-            public int Convert(RealmInteger<short> value) => value;
+            public override int Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortLongConverter : ISpecializedConverter<RealmInteger<short>, long>
+        public class RealmIntegerShortLongConverter : SpecializedConverterBase<RealmInteger<short>, long>
         {
-            public long Convert(RealmInteger<short> value) => value;
+            public override long Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<byte>>
+        public class RealmIntegerShortRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(RealmInteger<short> value) => (byte)value;
+            public override RealmInteger<byte> Convert(RealmInteger<short> value) => (byte)value;
         }
 
-        public class RealmIntegerShortRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<int>>
+        public class RealmIntegerShortRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(RealmInteger<short> value) => (int)value;
+            public override RealmInteger<int> Convert(RealmInteger<short> value) => (int)value;
         }
 
-        public class RealmIntegerShortRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<short>, RealmInteger<long>>
+        public class RealmIntegerShortRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<short>, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(RealmInteger<short> value) => (long)value;
+            public override RealmInteger<long> Convert(RealmInteger<short> value) => (long)value;
         }
 
-        public class RealmIntegerShortFloatConverter : ISpecializedConverter<RealmInteger<short>, float>
+        public class RealmIntegerShortFloatConverter : SpecializedConverterBase<RealmInteger<short>, float>
         {
-            public float Convert(RealmInteger<short> value) => value;
+            public override float Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortDoubleConverter : ISpecializedConverter<RealmInteger<short>, double>
+        public class RealmIntegerShortDoubleConverter : SpecializedConverterBase<RealmInteger<short>, double>
         {
-            public double Convert(RealmInteger<short> value) => value;
+            public override double Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortDecimalConverter : ISpecializedConverter<RealmInteger<short>, decimal>
+        public class RealmIntegerShortDecimalConverter : SpecializedConverterBase<RealmInteger<short>, decimal>
         {
-            public decimal Convert(RealmInteger<short> value) => value;
+            public override decimal Convert(RealmInteger<short> value) => value;
         }
 
-        public class RealmIntegerShortDecimal128Converter : ISpecializedConverter<RealmInteger<short>, Decimal128>
+        public class RealmIntegerShortDecimal128Converter : SpecializedConverterBase<RealmInteger<short>, Decimal128>
         {
-            public Decimal128 Convert(RealmInteger<short> value) => (short)value;
+            public override Decimal128 Convert(RealmInteger<short> value) => (short)value;
         }
 
-        public class RealmIntegerIntCharConverter : ISpecializedConverter<RealmInteger<int>, char>
+        public class RealmIntegerIntCharConverter : SpecializedConverterBase<RealmInteger<int>, char>
         {
-            public char Convert(RealmInteger<int> value) => (char)value;
+            public override char Convert(RealmInteger<int> value) => (char)value;
         }
 
-        public class RealmIntegerIntByteConverter : ISpecializedConverter<RealmInteger<int>, byte>
+        public class RealmIntegerIntByteConverter : SpecializedConverterBase<RealmInteger<int>, byte>
         {
-            public byte Convert(RealmInteger<int> value) => (byte)value;
+            public override byte Convert(RealmInteger<int> value) => (byte)value;
         }
 
-        public class RealmIntegerIntShortConverter : ISpecializedConverter<RealmInteger<int>, short>
+        public class RealmIntegerIntShortConverter : SpecializedConverterBase<RealmInteger<int>, short>
         {
-            public short Convert(RealmInteger<int> value) => (short)value;
+            public override short Convert(RealmInteger<int> value) => (short)value;
         }
 
-        public class RealmIntegerIntIntConverter : ISpecializedConverter<RealmInteger<int>, int>
+        public class RealmIntegerIntIntConverter : SpecializedConverterBase<RealmInteger<int>, int>
         {
-            public int Convert(RealmInteger<int> value) => value;
+            public override int Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntLongConverter : ISpecializedConverter<RealmInteger<int>, long>
+        public class RealmIntegerIntLongConverter : SpecializedConverterBase<RealmInteger<int>, long>
         {
-            public long Convert(RealmInteger<int> value) => value;
+            public override long Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<byte>>
+        public class RealmIntegerIntRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(RealmInteger<int> value) => (byte)value;
+            public override RealmInteger<byte> Convert(RealmInteger<int> value) => (byte)value;
         }
 
-        public class RealmIntegerIntRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<short>>
+        public class RealmIntegerIntRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(RealmInteger<int> value) => (short)value;
+            public override RealmInteger<short> Convert(RealmInteger<int> value) => (short)value;
         }
 
-        public class RealmIntegerIntRealmIntegerLongConverter : ISpecializedConverter<RealmInteger<int>, RealmInteger<long>>
+        public class RealmIntegerIntRealmIntegerLongConverter : SpecializedConverterBase<RealmInteger<int>, RealmInteger<long>>
         {
-            public RealmInteger<long> Convert(RealmInteger<int> value) => (long)value;
+            public override RealmInteger<long> Convert(RealmInteger<int> value) => (long)value;
         }
 
-        public class RealmIntegerIntFloatConverter : ISpecializedConverter<RealmInteger<int>, float>
+        public class RealmIntegerIntFloatConverter : SpecializedConverterBase<RealmInteger<int>, float>
         {
-            public float Convert(RealmInteger<int> value) => value;
+            public override float Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntDoubleConverter : ISpecializedConverter<RealmInteger<int>, double>
+        public class RealmIntegerIntDoubleConverter : SpecializedConverterBase<RealmInteger<int>, double>
         {
-            public double Convert(RealmInteger<int> value) => value;
+            public override double Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntDecimalConverter : ISpecializedConverter<RealmInteger<int>, decimal>
+        public class RealmIntegerIntDecimalConverter : SpecializedConverterBase<RealmInteger<int>, decimal>
         {
-            public decimal Convert(RealmInteger<int> value) => value;
+            public override decimal Convert(RealmInteger<int> value) => value;
         }
 
-        public class RealmIntegerIntDecimal128Converter : ISpecializedConverter<RealmInteger<int>, Decimal128>
+        public class RealmIntegerIntDecimal128Converter : SpecializedConverterBase<RealmInteger<int>, Decimal128>
         {
-            public Decimal128 Convert(RealmInteger<int> value) => (int)value;
+            public override Decimal128 Convert(RealmInteger<int> value) => (int)value;
         }
 
-        public class RealmIntegerLongCharConverter : ISpecializedConverter<RealmInteger<long>, char>
+        public class RealmIntegerLongCharConverter : SpecializedConverterBase<RealmInteger<long>, char>
         {
-            public char Convert(RealmInteger<long> value) => (char)value;
+            public override char Convert(RealmInteger<long> value) => (char)value;
         }
 
-        public class RealmIntegerLongByteConverter : ISpecializedConverter<RealmInteger<long>, byte>
+        public class RealmIntegerLongByteConverter : SpecializedConverterBase<RealmInteger<long>, byte>
         {
-            public byte Convert(RealmInteger<long> value) => (byte)value;
+            public override byte Convert(RealmInteger<long> value) => (byte)value;
         }
 
-        public class RealmIntegerLongShortConverter : ISpecializedConverter<RealmInteger<long>, short>
+        public class RealmIntegerLongShortConverter : SpecializedConverterBase<RealmInteger<long>, short>
         {
-            public short Convert(RealmInteger<long> value) => (short)value;
+            public override short Convert(RealmInteger<long> value) => (short)value;
         }
 
-        public class RealmIntegerLongIntConverter : ISpecializedConverter<RealmInteger<long>, int>
+        public class RealmIntegerLongIntConverter : SpecializedConverterBase<RealmInteger<long>, int>
         {
-            public int Convert(RealmInteger<long> value) => (int)value;
+            public override int Convert(RealmInteger<long> value) => (int)value;
         }
 
-        public class RealmIntegerLongLongConverter : ISpecializedConverter<RealmInteger<long>, long>
+        public class RealmIntegerLongLongConverter : SpecializedConverterBase<RealmInteger<long>, long>
         {
-            public long Convert(RealmInteger<long> value) => value;
+            public override long Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongRealmIntegerByteConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<byte>>
+        public class RealmIntegerLongRealmIntegerByteConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<byte>>
         {
-            public RealmInteger<byte> Convert(RealmInteger<long> value) => (byte)value;
+            public override RealmInteger<byte> Convert(RealmInteger<long> value) => (byte)value;
         }
 
-        public class RealmIntegerLongRealmIntegerShortConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<short>>
+        public class RealmIntegerLongRealmIntegerShortConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<short>>
         {
-            public RealmInteger<short> Convert(RealmInteger<long> value) => (short)value;
+            public override RealmInteger<short> Convert(RealmInteger<long> value) => (short)value;
         }
 
-        public class RealmIntegerLongRealmIntegerIntConverter : ISpecializedConverter<RealmInteger<long>, RealmInteger<int>>
+        public class RealmIntegerLongRealmIntegerIntConverter : SpecializedConverterBase<RealmInteger<long>, RealmInteger<int>>
         {
-            public RealmInteger<int> Convert(RealmInteger<long> value) => (int)value;
+            public override RealmInteger<int> Convert(RealmInteger<long> value) => (int)value;
         }
 
-        public class RealmIntegerLongFloatConverter : ISpecializedConverter<RealmInteger<long>, float>
+        public class RealmIntegerLongFloatConverter : SpecializedConverterBase<RealmInteger<long>, float>
         {
-            public float Convert(RealmInteger<long> value) => value;
+            public override float Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongDoubleConverter : ISpecializedConverter<RealmInteger<long>, double>
+        public class RealmIntegerLongDoubleConverter : SpecializedConverterBase<RealmInteger<long>, double>
         {
-            public double Convert(RealmInteger<long> value) => value;
+            public override double Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongDecimalConverter : ISpecializedConverter<RealmInteger<long>, decimal>
+        public class RealmIntegerLongDecimalConverter : SpecializedConverterBase<RealmInteger<long>, decimal>
         {
-            public decimal Convert(RealmInteger<long> value) => value;
+            public override decimal Convert(RealmInteger<long> value) => value;
         }
 
-        public class RealmIntegerLongDecimal128Converter : ISpecializedConverter<RealmInteger<long>, Decimal128>
+        public class RealmIntegerLongDecimal128Converter : SpecializedConverterBase<RealmInteger<long>, Decimal128>
         {
-            public Decimal128 Convert(RealmInteger<long> value) => (long)value;
+            public override Decimal128 Convert(RealmInteger<long> value) => (long)value;
         }
 
         #endregion Integral Converters
 
         #region Floating Point Converters
 
-        public class FloatNullableFloatConverter : ISpecializedConverter<float, float?>
+        public class FloatNullableFloatConverter : SpecializedConverterBase<float, float?>
         {
-            public float? Convert(float value) => value;
+            public override float? Convert(float value) => value;
         }
 
-        public class FloatNullableDoubleConverter : ISpecializedConverter<float, double?>
+        public class FloatNullableDoubleConverter : SpecializedConverterBase<float, double?>
         {
-            public double? Convert(float value) => value;
+            public override double? Convert(float value) => value;
         }
 
-        public class FloatNullableDecimalConverter : ISpecializedConverter<float, decimal?>
+        public class FloatNullableDecimalConverter : SpecializedConverterBase<float, decimal?>
         {
-            public decimal? Convert(float value) => (decimal)value;
+            public override decimal? Convert(float value) => (decimal)value;
         }
 
-        public class FloatNullableDecimal128Converter : ISpecializedConverter<float, Decimal128?>
+        public class FloatNullableDecimal128Converter : SpecializedConverterBase<float, Decimal128?>
         {
-            public Decimal128? Convert(float value) => (Decimal128)value;
+            public override Decimal128? Convert(float value) => (Decimal128)value;
         }
 
-        public class DoubleNullableFloatConverter : ISpecializedConverter<double, float?>
+        public class DoubleNullableFloatConverter : SpecializedConverterBase<double, float?>
         {
-            public float? Convert(double value) => (float)value;
+            public override float? Convert(double value) => (float)value;
         }
 
-        public class DoubleNullableDoubleConverter : ISpecializedConverter<double, double?>
+        public class DoubleNullableDoubleConverter : SpecializedConverterBase<double, double?>
         {
-            public double? Convert(double value) => value;
+            public override double? Convert(double value) => value;
         }
 
-        public class DoubleNullableDecimalConverter : ISpecializedConverter<double, decimal?>
+        public class DoubleNullableDecimalConverter : SpecializedConverterBase<double, decimal?>
         {
-            public decimal? Convert(double value) => (decimal)value;
+            public override decimal? Convert(double value) => (decimal)value;
         }
 
-        public class DoubleNullableDecimal128Converter : ISpecializedConverter<double, Decimal128?>
+        public class DoubleNullableDecimal128Converter : SpecializedConverterBase<double, Decimal128?>
         {
-            public Decimal128? Convert(double value) => (Decimal128)value;
+            public override Decimal128? Convert(double value) => (Decimal128)value;
         }
 
-        public class DecimalNullableFloatConverter : ISpecializedConverter<decimal, float?>
+        public class DecimalNullableFloatConverter : SpecializedConverterBase<decimal, float?>
         {
-            public float? Convert(decimal value) => (float)value;
+            public override float? Convert(decimal value) => (float)value;
         }
 
-        public class DecimalNullableDoubleConverter : ISpecializedConverter<decimal, double?>
+        public class DecimalNullableDoubleConverter : SpecializedConverterBase<decimal, double?>
         {
-            public double? Convert(decimal value) => (double)value;
+            public override double? Convert(decimal value) => (double)value;
         }
 
-        public class DecimalNullableDecimalConverter : ISpecializedConverter<decimal, decimal?>
+        public class DecimalNullableDecimalConverter : SpecializedConverterBase<decimal, decimal?>
         {
-            public decimal? Convert(decimal value) => value;
+            public override decimal? Convert(decimal value) => value;
         }
 
-        public class DecimalNullableDecimal128Converter : ISpecializedConverter<decimal, Decimal128?>
+        public class DecimalNullableDecimal128Converter : SpecializedConverterBase<decimal, Decimal128?>
         {
-            public Decimal128? Convert(decimal value) => value;
+            public override Decimal128? Convert(decimal value) => value;
         }
 
-        public class Decimal128NullableFloatConverter : ISpecializedConverter<Decimal128, float?>
+        public class Decimal128NullableFloatConverter : SpecializedConverterBase<Decimal128, float?>
         {
-            public float? Convert(Decimal128 value) => (float)value;
+            public override float? Convert(Decimal128 value) => (float)value;
         }
 
-        public class Decimal128NullableDoubleConverter : ISpecializedConverter<Decimal128, double?>
+        public class Decimal128NullableDoubleConverter : SpecializedConverterBase<Decimal128, double?>
         {
-            public double? Convert(Decimal128 value) => (double)value;
+            public override double? Convert(Decimal128 value) => (double)value;
         }
 
-        public class Decimal128NullableDecimalConverter : ISpecializedConverter<Decimal128, decimal?>
+        public class Decimal128NullableDecimalConverter : SpecializedConverterBase<Decimal128, decimal?>
         {
-            public decimal? Convert(Decimal128 value) => (decimal)value;
+            public override decimal? Convert(Decimal128 value) => (decimal)value;
         }
 
-        public class Decimal128NullableDecimal128Converter : ISpecializedConverter<Decimal128, Decimal128?>
+        public class Decimal128NullableDecimal128Converter : SpecializedConverterBase<Decimal128, Decimal128?>
         {
-            public Decimal128? Convert(Decimal128 value) => value;
+            public override Decimal128? Convert(Decimal128 value) => value;
         }
 
-        public class FloatDoubleConverter : ISpecializedConverter<float, double>
+        public class FloatDoubleConverter : SpecializedConverterBase<float, double>
         {
-            public double Convert(float value) => value;
+            public override double Convert(float value) => value;
         }
 
-        public class FloatDecimalConverter : ISpecializedConverter<float, decimal>
+        public class FloatDecimalConverter : SpecializedConverterBase<float, decimal>
         {
-            public decimal Convert(float value) => (decimal)value;
+            public override decimal Convert(float value) => (decimal)value;
         }
 
-        public class FloatDecimal128Converter : ISpecializedConverter<float, Decimal128>
+        public class FloatDecimal128Converter : SpecializedConverterBase<float, Decimal128>
         {
-            public Decimal128 Convert(float value) => (Decimal128)value;
+            public override Decimal128 Convert(float value) => (Decimal128)value;
         }
 
-        public class DoubleFloatConverter : ISpecializedConverter<double, float>
+        public class DoubleFloatConverter : SpecializedConverterBase<double, float>
         {
-            public float Convert(double value) => (float)value;
+            public override float Convert(double value) => (float)value;
         }
 
-        public class DoubleDecimalConverter : ISpecializedConverter<double, decimal>
+        public class DoubleDecimalConverter : SpecializedConverterBase<double, decimal>
         {
-            public decimal Convert(double value) => (decimal)value;
+            public override decimal Convert(double value) => (decimal)value;
         }
 
-        public class DoubleDecimal128Converter : ISpecializedConverter<double, Decimal128>
+        public class DoubleDecimal128Converter : SpecializedConverterBase<double, Decimal128>
         {
-            public Decimal128 Convert(double value) => (Decimal128)value;
+            public override Decimal128 Convert(double value) => (Decimal128)value;
         }
 
-        public class DecimalFloatConverter : ISpecializedConverter<decimal, float>
+        public class DecimalFloatConverter : SpecializedConverterBase<decimal, float>
         {
-            public float Convert(decimal value) => (float)value;
+            public override float Convert(decimal value) => (float)value;
         }
 
-        public class DecimalDoubleConverter : ISpecializedConverter<decimal, double>
+        public class DecimalDoubleConverter : SpecializedConverterBase<decimal, double>
         {
-            public double Convert(decimal value) => (double)value;
+            public override double Convert(decimal value) => (double)value;
         }
 
-        public class DecimalDecimal128Converter : ISpecializedConverter<decimal, Decimal128>
+        public class DecimalDecimal128Converter : SpecializedConverterBase<decimal, Decimal128>
         {
-            public Decimal128 Convert(decimal value) => value;
+            public override Decimal128 Convert(decimal value) => value;
         }
 
-        public class Decimal128FloatConverter : ISpecializedConverter<Decimal128, float>
+        public class Decimal128FloatConverter : SpecializedConverterBase<Decimal128, float>
         {
-            public float Convert(Decimal128 value) => (float)value;
+            public override float Convert(Decimal128 value) => (float)value;
         }
 
-        public class Decimal128DoubleConverter : ISpecializedConverter<Decimal128, double>
+        public class Decimal128DoubleConverter : SpecializedConverterBase<Decimal128, double>
         {
-            public double Convert(Decimal128 value) => (double)value;
+            public override double Convert(Decimal128 value) => (double)value;
         }
 
-        public class Decimal128DecimalConverter : ISpecializedConverter<Decimal128, decimal>
+        public class Decimal128DecimalConverter : SpecializedConverterBase<Decimal128, decimal>
         {
-            public decimal Convert(Decimal128 value) => (decimal)value;
+            public override decimal Convert(Decimal128 value) => (decimal)value;
         }
 
         #endregion Floating Point Converters
+
+        #region Nullable Converters
+
+
+        public class BoolNullableBoolConverter : SpecializedConverterBase<bool, bool?>
+        {
+            public override bool? Convert(bool value) => value;
+        }
+
+        public class DateTimeOffsetNullableDateTimeOffsetConverter : SpecializedConverterBase<DateTimeOffset, DateTimeOffset?>
+        {
+            public override DateTimeOffset? Convert(DateTimeOffset value) => value;
+        }
+
+        public class ObjectIdNullableObjectIdConverter : SpecializedConverterBase<ObjectId, ObjectId?>
+        {
+            public override ObjectId? Convert(ObjectId value) => value;
+        }
+
+        public class GuidNullableGuidConverter : SpecializedConverterBase<Guid, Guid?>
+        {
+            public override Guid? Convert(Guid value) => value;
+        }
+
+        #endregion
     }
 }
